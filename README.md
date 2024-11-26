@@ -9,6 +9,8 @@ Faculty of Computer and Information Science, University of Ljubljana
 [[`Arxiv`]()] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)] 
 
 
+https://github.com/user-attachments/assets/0bbeec33-2da9-4a90-85ae-52e92b0e1762
+
 
 
 _The official implementation will be released soon._
