@@ -33,6 +33,22 @@ DiDi is a distractor-distilled tracking dataset created to address the limitatio
   <i>Example frames from the DiDi dataset showing challenging distractors. Targets are denoted by green bounding boxes.</i>
 </div>
 
+## Experimental results on DiDi
+
+| Model         | Quality | Accuracy | Robustness |
+|---------------|---------|----------|------------|
+| SAMURAI       | 0.680 :2nd_place_medal:	  | 0.722 :3rd_place_medal:	   | 0.930 :2nd_place_medal:	    |
+| SAM2.1Long    | 0.646   | 0.719    | 0.883      |
+| ODTrack       | 0.608   | 0.740 :1st_place_medal:	 | 0.809    |
+| Cutie         | 0.575   | 0.704    | 0.776      |
+| AOT           | 0.541   | 0.622    | 0.852      |
+| AQATrack      | 0.535   | 0.693    | 0.753      |
+| SeqTrack      | 0.529   | 0.714    | 0.718      |
+| KeepTrack     | 0.502   | 0.646    | 0.748      |
+| TransT        | 0.465   | 0.669    | 0.678      |
+| SAM2.1   | 0.649 :3rd_place_medal:	 | 0.720    | 0.887 :3rd_place_medal:	 |
+| **SAM2.1++** (ours) | 0.694 :1st_place_medal:	 | 0.727 :2nd_place_medal:	 | 0.944 :1st_place_medal:	 |
+
 ## Acknowledgments
 
 Our work is built on top of [SAM 2](https://github.com/facebookresearch/sam2?tab=readme-ov-file) by Meta FAIR.
