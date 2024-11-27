@@ -12,6 +12,10 @@ Faculty of Computer and Information Science, University of Ljubljana
 https://github.com/user-attachments/assets/0bbeec33-2da9-4a90-85ae-52e92b0e1762
 
 
+https://github.com/user-attachments/assets/84e2a080-5358-45a4-9a40-9807c4d9771e
+
+
+
 
 _The official implementation will be released soon._
 </div>
