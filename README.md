@@ -6,7 +6,7 @@
 
 Faculty of Computer and Information Science, University of Ljubljana
 
-[[`Arxiv`]()] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)] 
+[[`Arxiv`](https://arxiv.org/abs/2411.17576)] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)] 
 
 
 https://github.com/user-attachments/assets/0bbeec33-2da9-4a90-85ae-52e92b0e1762
@@ -19,8 +19,7 @@ _The official implementation will be released soon._
 
 
 ## Abstract
-Memory-based trackers use recent frames to model targets and localize them by comparing the current image with buffered frames. While achieving high performance, these trackers still struggle with distractors. We introduce a new distractor-aware memory model and an introspection-based update strategy for SAM2, called SAM2.1++, to enhance segmentation accuracy and tracking robustness. Additionally, we present the distractor-distilled DiDi dataset for better performance analysis in the presence of distractors. SAM2.1++ surpasses baseline SAM2.1 on seven benchmarks, setting new state-of-the-art results on six. 
-For more details, please refer to the [preprint]().
+Memory-based trackers such as SAM2 demonstrate remarkable performance, however still struggle with distractors. We propose a new plug-in distractor-aware memory (DAM) and management strategy that substantially improves tracking robustness. The new model is demonstrated on SAM2.1, leading to SAM2.1++, which sets a new state-of-the-art results on six benchmarks, including the most challenging VOT/S benchmarks without additional training. We also propose a new distractor-distilled (DiDi) dataset to better study the distractor problem. See the [preprint](https://arxiv.org/abs/2411.17576) for more details.
 
 ## Getting Started
 Code and detailed instructions for running it (including integration with [VOT toolkit](https://github.com/votchallenge/toolkit)) will be released soon.
@@ -37,16 +36,16 @@ DiDi is a distractor-distilled tracking dataset created to address the limitatio
 
 | Model         | Quality | Accuracy | Robustness |
 |---------------|---------|----------|------------|
-| SAMURAI       | 0.680 :2nd_place_medal:	  | 0.722 :3rd_place_medal:	   | 0.930 :2nd_place_medal:	    |
-| SAM2.1Long    | 0.646   | 0.719    | 0.883      |
-| ODTrack       | 0.608   | 0.740 :1st_place_medal:	 | 0.809    |
-| Cutie         | 0.575   | 0.704    | 0.776      |
-| AOT           | 0.541   | 0.622    | 0.852      |
-| AQATrack      | 0.535   | 0.693    | 0.753      |
-| SeqTrack      | 0.529   | 0.714    | 0.718      |
-| KeepTrack     | 0.502   | 0.646    | 0.748      |
 | TransT        | 0.465   | 0.669    | 0.678      |
+| KeepTrack     | 0.502   | 0.646    | 0.748      |
+| SeqTrack      | 0.529   | 0.714    | 0.718      |
+| AQATrack      | 0.535   | 0.693    | 0.753      |
+| AOT           | 0.541   | 0.622    | 0.852      |
+| Cutie         | 0.575   | 0.704    | 0.776      |
+| ODTrack       | 0.608   | 0.740 :1st_place_medal:	 | 0.809    |
+| SAM2.1Long    | 0.646   | 0.719    | 0.883      |
 | SAM2.1   | 0.649 :3rd_place_medal:	 | 0.720    | 0.887 :3rd_place_medal:	 |
+| SAMURAI       | 0.680 :2nd_place_medal:	  | 0.722 :3rd_place_medal:	   | 0.930 :2nd_place_medal:	    |
 | **SAM2.1++** (ours) | 0.694 :1st_place_medal:	 | 0.727 :2nd_place_medal:	 | 0.944 :1st_place_medal:	 |
 
 ## Acknowledgments
