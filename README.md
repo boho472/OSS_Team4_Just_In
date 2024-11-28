@@ -8,14 +8,10 @@ Faculty of Computer and Information Science, University of Ljubljana
 
 [[`Arxiv`](https://arxiv.org/abs/2411.17576)] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)] 
 
+https://github.com/user-attachments/assets/e164ee89-072b-4988-93f4-49ea3abe9662
 
 
-https://github.com/user-attachments/assets/d33dfea9-a27f-42a6-84f5-e69802372bda
-
-
-
-https://github.com/user-attachments/assets/137566fa-09f8-40b2-aa20-349333d273dd
-
+https://github.com/user-attachments/assets/3da75861-0289-460e-95bf-cd6a6185c9b7
 
 
 
