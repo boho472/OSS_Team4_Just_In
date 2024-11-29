@@ -6,7 +6,7 @@
 
 Faculty of Computer and Information Science, University of Ljubljana
 
-[[`Arxiv`](https://arxiv.org/abs/2411.17576)] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)] 
+[[`Arxiv`](https://arxiv.org/abs/2411.17576)]  [[`Project page`](https://jovanavidenovic.github.io/dam-4-sam/) ] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)]
 
 
 
@@ -96,7 +96,7 @@ vot report --workspace <path-to-vot-workspace> --format=html DAM4SAM
 ```
 
 ### Bounding box datasets
-Running our tracker is supported on LaSot, LaSoText and GoT-10k datasets. Tracker is initialized with masks, which are obtained using SAM2 image predictor, from ground truth initialization bounding boxes. You can download them for all datasets [at this link](https://data.vicos.si/alanl/sam2_init_masks.zip). Before running the tracker, set the corresponding paths to the datasets and the directory with ground truth masks in dam4sam_config.yaml (in the repo root directory).
+Running our tracker is supported on LaSot, LaSoText and GoT-10k datasets. Tracker is initialized with masks, which are obtained using SAM2 image predictor, from ground truth initialization bounding boxes. You can download them for all datasets at [this link](https://data.vicos.si/alanl/sam2_init_masks.zip). Before running the tracker, set the corresponding paths to the datasets and the directory with ground truth masks in dam4sam_config.yaml (in the repo root directory).
 
 Run on the whole dataset and save results to disk (arguments for the argument <dataset-name> can be: `got | lasot | lasot_ext`):
 ```bash
@@ -116,7 +116,7 @@ DiDi is a distractor-distilled tracking dataset created to address the limitatio
 </div>
 
 ### Experimental results on DiDi
-
+See [the project page](https://jovanavidenovic.github.io/dam-4-sam/) for qualitative comparison.
 | Model         | Quality | Accuracy | Robustness |
 |---------------|---------|----------|------------|
 | TransT        | 0.465   | 0.669    | 0.678      |
