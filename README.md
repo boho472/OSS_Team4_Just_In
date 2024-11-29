@@ -10,6 +10,14 @@ Faculty of Computer and Information Science, University of Ljubljana
 
 
 
+https://github.com/user-attachments/assets/e90158ba-5c02-489d-9401-26f77f0592b0
+
+
+
+https://github.com/user-attachments/assets/0203a96a-c5c9-46f8-90d6-2445d2c5ad73
+
+
+
 
 </div>
 
@@ -107,7 +115,7 @@ DiDi is a distractor-distilled tracking dataset created to address the limitatio
   <i>Example frames from the DiDi dataset showing challenging distractors. Targets are denoted by green bounding boxes.</i>
 </div>
 
-## Experimental results on DiDi
+### Experimental results on DiDi
 
 | Model         | Quality | Accuracy | Robustness |
 |---------------|---------|----------|------------|
@@ -126,4 +134,20 @@ DiDi is a distractor-distilled tracking dataset created to address the limitatio
 ## Acknowledgments
 
 Our work is built on top of [SAM 2](https://github.com/facebookresearch/sam2?tab=readme-ov-file) by Meta FAIR.
+
+## Citation
+
+If you find our work useful for your research, please consider giving us a star and citing our work.
+```bibtex
+@article{videnovic_dam4sam,
+    title = {A Distractor-Aware Memory for Visual Object Tracking with SAM2},
+    author = {Jovana Videnovic and Alan Lukezic and Matej Kristan},
+    year={2024},
+    journal = {arXiv:2411.17576}
+}
+```
+
+
+
+
 
