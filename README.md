@@ -6,7 +6,7 @@
 
 Faculty of Computer and Information Science, University of Ljubljana
 
-[[`Arxiv`](https://arxiv.org/abs/2411.17576)]  [[`Project page`](https://jovanavidenovic.github.io/dam-4-sam/) ] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)]
+[[`Preprint`](https://prints.vicos.si/publications/457)]  [[`Project page`](https://jovanavidenovic.github.io/dam-4-sam/) ] [[`DiDi dataset`](#didi-a-distractor-distilled-dataset)]
 
 
 
