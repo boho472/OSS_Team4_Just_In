@@ -1,6 +1,6 @@
 <div align="center">
 
-# A Distractor-Aware Memory for <br> Visual Object Tracking with SAM2
+# A Distractor-Aware Memory (DAM) for <br> Visual Object Tracking with SAM2
 
 [Jovana Videnović](https://www.linkedin.com/in/jovana-videnovi%C4%87-5a5b08169/), [Alan Lukežič](https://www.vicos.si/people/alan_lukezic/), and [Matej Kristan](https://www.vicos.si/people/matej_kristan/)
 
@@ -134,19 +134,6 @@ See [the project page](https://jovanavidenovic.github.io/dam-4-sam/) for qualita
 ## Acknowledgments
 
 Our work is built on top of [SAM 2](https://github.com/facebookresearch/sam2?tab=readme-ov-file) by Meta FAIR.
-
-## Citation
-
-If you find our work useful for your research, please consider giving us a star and citing our work.
-```bibtex
-@article{videnovic_dam4sam,
-    title = {A Distractor-Aware Memory for Visual Object Tracking with SAM2},
-    author = {Jovana Videnovic and Alan Lukezic and Matej Kristan},
-    year={2024},
-    journal = {arXiv:2411.17576}
-}
-```
-
 
 
 
