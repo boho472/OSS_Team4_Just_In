@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/0203a96a-c5c9-46f8-90d6-2445d2c5ad73
 </div>
 
 ## Abstract
-Memory-based trackers such as SAM2 demonstrate remarkable performance, however still struggle with distractors. We propose a new plug-in distractor-aware memory (DAM) and management strategy that substantially improves tracking robustness. The new model is demonstrated on SAM2.1, leading to SAM2.1++, which sets a new state-of-the-art on six benchmarks, including the most challenging VOT/S benchmarks without additional training. We also propose a new distractor-distilled (DiDi) dataset to better study the distractor problem. See the [preprint](https://arxiv.org/abs/2411.17576) for more details.
+Memory-based trackers such as SAM2 demonstrate remarkable performance, however still struggle with distractors. We propose a new plug-in distractor-aware memory (DAM) and management strategy that substantially improves tracking robustness. The new model is demonstrated on SAM2.1, leading to SAM2.1++, which sets a new state-of-the-art on six benchmarks, including the most challenging VOT/S benchmarks without additional training. We also propose a new distractor-distilled (DiDi) dataset to better study the distractor problem. See the [preprint](https://prints.vicos.si/publications/457) for more details.
 
 ## Installation
 
