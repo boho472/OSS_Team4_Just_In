@@ -66,15 +66,24 @@ This repository supports evaluation on the following datasets: DiDi, VOT2020, VO
 
 ### DiDi dataset
 
+Run on a single sequence and visualize results:
+```bash
+CUDA_VISIBLE_DEVICES=0 python run_on_didi.py --dataset_path <path-to-didi> --sequence <sequence-name>
+```
+
 Run on the whole dataset and save results to disk:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python run_on_didi.py --dataset_path <path-to-didi> --output_dir <output-dir-path>
 ```
 
-Run on a single sequence and visualize results:
+After obtaining the raw results on DiDi using previous command, you can compute performance measures. This is done using the VOT toolkit. We thus provide the empty vot workspace in the `didi-workspace` directory. The sequences from DiDi dataset should be placed into the `didi-workspace/sequences` directory. Alternatively, you can just create a symbolic link names `sequences` in the `didi-workspace`, pointed to the DiDi dataset on your disk. The raw results must be placed in the `results` subfolder, e.g. `didi-workspace/results/DAM4SAM`. Then, the performance measures are computed using the following commands:
+
 ```bash
-CUDA_VISIBLE_DEVICES=0 python run_on_didi.py --dataset_path <path-to-didi> --sequence <sequence-name>
+vot analysis --workspace <path-to-didi-workspace> --format=json DAM4SAM
+vot report --workspace <path-to-didi-workspace> --format=html DAM4SAM
 ```
+
+You can check performance measures in the generated report under `didi-workspace/reports`. Note: if running the analysis multiple times, remember to clear the cache directory. 
 
 ### VOT2020 and VOT2022 Challenges
 
