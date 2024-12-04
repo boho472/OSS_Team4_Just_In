@@ -76,14 +76,20 @@ Run on the whole dataset and save results to disk:
 CUDA_VISIBLE_DEVICES=0 python run_on_didi.py --dataset_path <path-to-didi> --output_dir <output-dir-path>
 ```
 
-After obtaining the raw results on DiDi using previous command, you can compute performance measures. This is done using the VOT toolkit. We thus provide the empty vot workspace in the `didi-workspace` directory. The sequences from DiDi dataset should be placed into the `didi-workspace/sequences` directory. Alternatively, you can just create a symbolic link names `sequences` in the `didi-workspace`, pointed to the DiDi dataset on your disk. The raw results must be placed in the `results` subfolder, e.g. `didi-workspace/results/DAM4SAM`. Then, the performance measures are computed using the following commands:
+After obtaining the raw results on DiDi using previous command, you can compute performance measures. This is done using the VOT toolkit. We thus provide the empty vot workspace in the `didi-workspace` directory. The sequences from DiDi dataset should be placed into the `didi-workspace/sequences` directory. Alternatively, you can just create a symbolic link named `sequences` in the `didi-workspace`, pointed to the DiDi dataset on your disk. The raw results must be placed in the `results` subfolder, e.g. `didi-workspace/results/DAM4SAM`. If the results were obtained using `run_on_didi.py` you should move them to the workspace using the following command:
+
+```bash
+python move_didi_results.py --dataset_path <path-to-didi> --src <source-results-directory> --dst ./didi-workspace/results/DAM4SAM
+```
+
+The `<source-results-directory>` is the path to the directory used as `output_dir` argument in `run_on_didi.py` script. The `move_didi_results.py` script does not only move the results, but also convert them into bounding boxes since DiDi is a bounding box dataset. Finally, the performance measures are computed using the following commands:
 
 ```bash
 vot analysis --workspace <path-to-didi-workspace> --format=json DAM4SAM
 vot report --workspace <path-to-didi-workspace> --format=html DAM4SAM
 ```
 
-You can check performance measures in the generated report under `didi-workspace/reports`. Note: if running the analysis multiple times, remember to clear the cache directory. 
+Performance measures are available in the generated report under `didi-workspace/reports`. Note: if running the analysis multiple times, remember to clear the `cache` directory. 
 
 ### VOT2020 and VOT2022 Challenges
 
