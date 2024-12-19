@@ -64,6 +64,14 @@ Our model configs are available in `sam2/` folder.
 
 This repository supports evaluation on the following datasets: DiDi, VOT2020, VOT2022, LaSot, LaSoText and GoT-10k. Support for running on VOTS2024 will be added soon. 
 
+### A quick demo
+
+A demo script `run_bbox_example.py` is provided to quickly run the tracker on a given directory containing a sequence of frames. The script first asks user to draw an initi bounding box, which is used to automatically estimate a segmentation mask on an init frame. The script is run using the following command:
+```bash
+CUDA_VISIBLE_DEVICES=0 python run_bbox_example.py --dir <frames-dir> --ext <frame-ext> --output_dir <output-dir>
+```
+`<frames-dir>` is a path to the directory containing sequence frames, `<frame-ext>` is a frame extension e.g., jpg, png, etc. (this is an optional argument, default: jpg), `<output-dir>` is a path to the output directory, where predicted segmentation masks for all frames will be saved. The `--output_dir` is an optional argument, if not given, the script will just visualize the results.
+
 ### DiDi dataset
 
 Run on a single sequence and visualize results:
