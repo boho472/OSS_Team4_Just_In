@@ -25,29 +25,30 @@ def keep_largest_component(mask):
     return filtered_mask
 
 def determine_tracker(tracker_name):
+    path_ = os.path.abspath(os.path.dirname(__file__))
     if tracker_name == "sam21pp-L":
-        checkpoint = "./checkpoints/sam2.1_hiera_large.pt"
+        checkpoint = os.path.join(path_, "../checkpoints/sam2.1_hiera_large.pt")
         model_cfg = "sam21pp_hiera_l.yaml"
     elif tracker_name == "sam21pp-B":
-        checkpoint = "./checkpoints/sam2.1_hiera_base_plus.pt"
+        checkpoint = os.path.join(path_, "../checkpoints/sam2.1_hiera_base_plus.pt")
         model_cfg = "sam21pp_hiera_b+.yaml"
     elif tracker_name == "sam21pp-S":
-        checkpoint = "./sam2.1_hiera_small.pt"
+        checkpoint = os.path.join(path_, "../sam2.1_hiera_small.pt")
         model_cfg = "sam21pp_hiera_s.yaml"
     elif tracker_name == "sam21pp-T":
-        checkpoint = "./sam2.1_hiera_tiny.pt"
+        checkpoint = os.path.join(path_, "../sam2.1_hiera_tiny.pt")
         model_cfg = "sam21pp_hiera_t.yaml"
     elif tracker_name == "sam2pp-L":
-        checkpoint = "./sam2_hiera_large.pt"
+        checkpoint = os.path.join(path_, "../sam2_hiera_large.pt")
         model_cfg = "sam2pp_hiera_l.yaml"
     elif tracker_name == "sam2pp-B":
-        checkpoint = "./sam2_hiera_base_plus.pt"
+        checkpoint = os.path.join(path_, "../sam2_hiera_base_plus.pt")
         model_cfg = "sam2pp_hiera_b+.yaml"
     elif tracker_name == "sam2pp-S":
-        checkpoint = "./sam2_hiera_small.pt"
+        checkpoint = os.path.join(path_, "../sam2_hiera_small.pt")
         model_cfg = "sam2pp_hiera_s.yaml"
     elif tracker_name == "sam2pp-T":
-        checkpoint = "./sam2_hiera_tiny.pt"
+        checkpoint = os.path.join(path_, "../sam2_hiera_tiny.pt")
         model_cfg = "sam2pp_hiera_t.yaml"
     return checkpoint, model_cfg
 
