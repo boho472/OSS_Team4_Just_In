@@ -10,7 +10,8 @@ import random
 import os
 from utils.utils import keep_largest_component, determine_tracker
 
-with open("./dam4sam_config.yaml") as f:
+path_ = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(path_, "dam4sam_config.yaml")) as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
 seed = config["seed"]
@@ -118,7 +119,7 @@ class DAM4SAMTracker():
         return inference_state
 
     @torch.inference_mode()
-    def initialize(self, image, init_mask):
+    def initialize(self, image, init_mask, bbox=None):
         """
         Initialize the tracker with the first frame and mask.
         Function builds the SAM 2.1++ tracker and initializes it with the first frame and mask.
@@ -148,6 +149,14 @@ class DAM4SAMTracker():
         self.inference_state["images"] = {0 : prepared_img}
         self.inference_state["num_frames"] = 1
         self.predictor.reset_state(self.inference_state)
+
+        if init_mask is None:
+            if bbox is None:
+                print('Error: initialization state (bbox or mask) is not given.')
+                exit(-1)
+            
+            # consider bbox initialization - estimate init mask from bbox first
+            init_mask = self.estimate_mask_from_box(bbox)
 
         # Initialize the tracker with the first frame and mask
         _, _, out_mask_logits = self.predictor.add_new_mask(
@@ -249,3 +258,74 @@ class DAM4SAMTracker():
             # Return the predicted mask for the current frame
             out_dict = {'pred_mask': m}
             return out_dict
+
+    def estimate_mask_from_box(self, bbox):
+        (
+            _,
+            _,
+            current_vision_feats,
+            current_vision_pos_embeds,
+            feat_sizes,
+        ) = self.predictor._get_image_feature(self.inference_state, 0, 1)
+
+        box = np.array([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])[None, :]
+        box = torch.as_tensor(box, dtype=torch.float, device=current_vision_feats[0].device)
+
+        from sam2.utils.transforms import SAM2Transforms
+        _transforms = SAM2Transforms(
+            resolution=self.predictor.image_size,
+            mask_threshold=0.0,
+            max_hole_area=0.0,
+            max_sprinkle_area=0.0,
+        )
+        unnorm_box = _transforms.transform_boxes(
+            box, normalize=True, orig_hw=(self.img_height, self.img_width)
+        )  # Bx2x2
+        
+        box_coords = unnorm_box.reshape(-1, 2, 2)
+        box_labels = torch.tensor([[2, 3]], dtype=torch.int, device=unnorm_box.device)
+        box_labels = box_labels.repeat(unnorm_box.size(0), 1)
+        concat_points = (box_coords, box_labels)
+
+        sparse_embeddings, dense_embeddings = self.predictor.sam_prompt_encoder(
+            points=concat_points,
+            boxes=None,
+            masks=None
+        )
+
+        # Predict masks
+        batched_mode = (
+            concat_points is not None and concat_points[0].shape[0] > 1
+        )  # multi object prediction
+        high_res_features = []
+        for i in range(2):
+            _, b_, c_ = current_vision_feats[i].shape
+            high_res_features.append(current_vision_feats[i].permute(1, 2, 0).view(b_, c_, feat_sizes[i][0], feat_sizes[i][1]))
+        if self.predictor.directly_add_no_mem_embed:
+            img_embed = current_vision_feats[2] + self.predictor.no_mem_embed
+        else:
+            img_embed = current_vision_feats[2]
+        _, b_, c_ = current_vision_feats[2].shape
+        img_embed = img_embed.permute(1, 2, 0).view(b_, c_, feat_sizes[2][0], feat_sizes[2][1])
+        low_res_masks, iou_predictions, _, _ = self.predictor.sam_mask_decoder(
+            image_embeddings=img_embed,
+            image_pe=self.predictor.sam_prompt_encoder.get_dense_pe(),
+            sparse_prompt_embeddings=sparse_embeddings,
+            dense_prompt_embeddings=dense_embeddings,
+            multimask_output=False,
+            repeat_image=batched_mode,
+            high_res_features=high_res_features,
+        )
+
+        # Upscale the masks to the original image resolution
+        masks = _transforms.postprocess_masks(
+            low_res_masks, (self.img_height, self.img_width)
+        )
+        low_res_masks = torch.clamp(low_res_masks, -32.0, 32.0)
+        masks = masks > 0
+
+        masks_np = masks.squeeze(0).float().detach().cpu().numpy()
+        iou_predictions_np = iou_predictions.squeeze(0).float().detach().cpu().numpy()
+
+        init_mask = masks_np[0]
+        return init_mask

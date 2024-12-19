@@ -23,7 +23,7 @@ def overlay_mask(img, mask, color=(0, 255, 0), line_width=2, alpha=0.6):
 
         # draw contour around mask
         M = m_bin.astype(np.uint8)
-        if cv2.__version__[-5] == '4':
+        if cv2.__version__[0] == '4':
             contours, _ = cv2.findContours(M, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         else:
             _, contours, _ = cv2.findContours(M, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
