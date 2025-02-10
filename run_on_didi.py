@@ -45,7 +45,8 @@ def run_sequence(tracker_name, dataset_path, sequence_names, output_dir=None):
 
         init_img = Image.open(sequence.frame(0).filename())
         img_width, img_height = init_img.width, init_img.height
-        mask = sequence.groundtruth(0).rasterize((0, 0, img_width - 1, img_height - 1)).astype(np.uint8)
+        init_mask_path = os.path.join(sequence.metadata('root'), 'first_frame_segm.txt')
+        mask = read_trajectory(init_mask_path)[0].rasterize((0, 0, img_width-1, img_height-1))
         outputs = tracker.initialize(init_img, mask)
         pred_masks.append(Mask(mask))
         
