@@ -1,6 +1,6 @@
 <div align="center">
 
-# A Distractor-Aware Memory (DAM) for <br> Visual Object Tracking with SAM2
+# A Distractor-Aware Memory (DAM) for <br> Visual Object Tracking with SAM2 [CVPR, 2025]
 
 [Jovana Videnović](https://www.linkedin.com/in/jovana-videnovi%C4%87-5a5b08169/), [Alan Lukežič](https://www.vicos.si/people/alan_lukezic/), and [Matej Kristan](https://www.vicos.si/people/matej_kristan/)
 
