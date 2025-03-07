@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 from vot.dataset import load_dataset
-from vot.region.io import write_trajectory
+from vot.region.io import write_trajectory, read_trajectory
 from vot.region.shapes import Mask
 
 from dam4sam_tracker import DAM4SAMTracker
