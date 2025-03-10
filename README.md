@@ -10,11 +10,8 @@ Faculty of Computer and Information Science, University of Ljubljana
 
 
 
-https://github.com/user-attachments/assets/e90158ba-5c02-489d-9401-26f77f0592b0
+https://github.com/user-attachments/assets/ecfc1e20-0463-4841-876d-2202acc93f77
 
-
-
-https://github.com/user-attachments/assets/0203a96a-c5c9-46f8-90d6-2445d2c5ad73
 
 
 
@@ -22,7 +19,7 @@ https://github.com/user-attachments/assets/0203a96a-c5c9-46f8-90d6-2445d2c5ad73
 </div>
 
 ## Abstract
-Memory-based trackers such as SAM2 demonstrate remarkable performance, however still struggle with distractors. We propose a new plug-in distractor-aware memory (DAM) and management strategy that substantially improves tracking robustness. The new model is demonstrated on SAM2.1, leading to SAM2.1++, which sets a new state-of-the-art on six benchmarks, including the most challenging VOT/S benchmarks without additional training. We also propose a new distractor-distilled (DiDi) dataset to better study the distractor problem. See the [preprint](https://arxiv.org/abs/2411.17576) for more details.
+Memory-based trackers such as SAM2 demonstrate remarkable performance, however still struggle with distractors. We propose a new plug-in distractor-aware memory (DAM) and management strategy that substantially improves tracking robustness. The new model is demonstrated on SAM2.1, leading to DAM4SAM, which sets a new state-of-the-art on six benchmarks, including the most challenging VOT/S benchmarks without additional training. We also propose a new distractor-distilled (DiDi) dataset to better study the distractor problem. See the [preprint](https://arxiv.org/abs/2411.17576) for more details.
 
 ## Installation
 
@@ -152,7 +149,7 @@ See [the project page](https://jovanavidenovic.github.io/dam-4-sam/) for qualita
 | SAM2.1Long    | 0.646   | 0.719    | 0.883      |
 | SAM2.1   | 0.649 :3rd_place_medal:	 | 0.720    | 0.887 :3rd_place_medal:	 |
 | SAMURAI       | 0.680 :2nd_place_medal:	  | 0.722 :3rd_place_medal:	   | 0.930 :2nd_place_medal:	    |
-| **SAM2.1++** (ours) | 0.694 :1st_place_medal:	 | 0.727 :2nd_place_medal:	 | 0.944 :1st_place_medal:	 |
+| **DAM4SAM** (ours) | 0.694 :1st_place_medal:	 | 0.727 :2nd_place_medal:	 | 0.944 :1st_place_medal:	 |
 
 ## Acknowledgments
 
