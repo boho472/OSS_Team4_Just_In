@@ -63,11 +63,11 @@ This repository supports evaluation on the following datasets: DiDi, VOT2020, VO
 
 ### A quick demo
 
-A demo script `run_bbox_example.py` is provided to quickly run the tracker on a given directory containing a sequence of frames. The script first asks user to draw an initi bounding box, which is used to automatically estimate a segmentation mask on an init frame. The script is run using the following command:
+A demo script `run_bbox_example.py` is provided to quickly run the tracker on a given directory containing a sequence of frames. The script first asks user to draw an init bounding box, which is used to automatically estimate a segmentation mask on an init frame. The script is run using the following command:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python run_bbox_example.py --dir <frames-dir> --ext <frame-ext> --output_dir <output-dir>
 ```
-`<frames-dir>` is a path to the directory containing sequence frames, `<frame-ext>` is a frame extension e.g., jpg, png, etc. (this is an optional argument, default: jpg), `<output-dir>` is a path to the output directory, where predicted segmentation masks for all frames will be saved. The `--output_dir` is an optional argument, if not given, the script will just visualize the results.
+`<frames-dir>` is a path to the directory containing a sequence of frames, `<frame-ext>` is a frame extension e.g., jpg, png, etc. (this is an optional argument, default: jpg), `<output-dir>` is a path to the output directory, where predicted segmentation masks for all frames will be saved. The `--output_dir` is an optional argument, if not given, the script will just visualize the results.
 
 ### DiDi dataset
 
@@ -127,6 +127,24 @@ Run on a single sequence and visualize results:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python run_on_box_dataset.py --dataset_name=<dataset-name> --sequence=<sequence-name>
 ```
+
+## Object Removal
+We provide a demo for object removal in a video -- as you can see the examples on our [project page](https://jovanavidenovic.github.io/dam-4-sam/). Object removal is performed by a simple pipeline: first, using our DAM4SAM for segmenting a selected object and second using the [proPainter tool](https://github.com/sczhou/ProPainter) for object inpainting. Object removal can be performed using the following command:
+```bash
+./inpaint_object.sh <frames_dir> <output_dir>
+```
+where `<frames_dir>` is a path to the directory with a sequence of video frames and `<output_dir>` is a path to the directory where output (intermediate masks and inpainted video) will be stored. Note that the script will remove any content from the `<output_dir>`. 
+The output video quality is controlled by output size using the `--resize_ratio 0.5` -- you can increase this ratio to 1 if you have enough GPU memory.
+The pipeline goes as follows: (i) the user is required to draw a bounding box around the object that should be removed, (ii) DAM4SAM performs a binary segmentation of the selected object through the whole video and stores segmentation masks on disk (in `<output_dir>`) and (iii) proPainter performs object removal using `inference_propainter.py` script. 
+To assure the correct setup, the following project directory structure should be provided:
+```bash
+├── root_dir
+│   ├── dam4sam
+│   ├── proPainter
+└── inpaint_object.sh
+```
+Where `dam4sam` is a directory with the DAM4SAM code (this repository) and `proPainter` is a directory where [proPainter](https://github.com/sczhou/ProPainter) is checkouted. The script `inpaint_object.sh` is provided in this repository. 
+
 ## DiDi: A distractor-distilled dataset
 DiDi is a distractor-distilled tracking dataset created to address the limitation of low distractor presence in current visual object tracking benchmarks. To enhance the evaluation and analysis of tracking performance amidst distractors, we have semi-automatically distilled several existing benchmarks into the DiDi dataset. The dataset is available for download at [this link](https://go.vicos.si/didi).
 
