@@ -145,6 +145,10 @@ To assure the correct setup, the following project directory structure should be
 ```
 Where `dam4sam` is a directory with the DAM4SAM code (this repository) and `proPainter` is a directory where [proPainter](https://github.com/sczhou/ProPainter) is checkouted. The script `inpaint_object.sh` is provided in this repository. 
 
+
+https://github.com/user-attachments/assets/ddb4a87b-92cf-4f78-be3b-8218d75b8599
+
+
 ## DiDi: A distractor-distilled dataset
 DiDi is a distractor-distilled tracking dataset created to address the limitation of low distractor presence in current visual object tracking benchmarks. To enhance the evaluation and analysis of tracking performance amidst distractors, we have semi-automatically distilled several existing benchmarks into the DiDi dataset. The dataset is available for download at [this link](https://go.vicos.si/didi).
 
