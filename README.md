@@ -129,6 +129,9 @@ CUDA_VISIBLE_DEVICES=0 python run_on_box_dataset.py --dataset_name=<dataset-name
 ```
 
 ## Object Removal
+
+<p align="center"> <img src="imgs/object-removal.png" width="95%"> </p>
+
 We provide a demo for object removal in a video -- as you can see the examples on our [project page](https://jovanavidenovic.github.io/dam-4-sam/). Object removal is performed by a simple pipeline: first, using our DAM4SAM for segmenting a selected object and second using the [proPainter tool](https://github.com/sczhou/ProPainter) for object inpainting. Object removal can be performed using the following command:
 ```bash
 ./inpaint_object.sh <frames_dir> <output_dir>
