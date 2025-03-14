@@ -128,7 +128,7 @@ Run on a single sequence and visualize results:
 CUDA_VISIBLE_DEVICES=0 python run_on_box_dataset.py --dataset_name=<dataset-name> --sequence=<sequence-name>
 ```
 
-## Object Removal
+## Video object removal by Remove Anything
 
 <p align="center"> <img src="imgs/object-removal.png" width="95%"> </p>
 
