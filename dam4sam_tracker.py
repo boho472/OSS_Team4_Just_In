@@ -1,6 +1,8 @@
 import numpy as np
 import yaml
 import torch
+import torchvision.transforms.functional as F
+
 from vot.region.raster import calculate_overlaps
 from vot.region.shapes import Mask
 from vot.region import RegionType
@@ -10,8 +12,9 @@ import random
 import os
 from utils.utils import keep_largest_component, determine_tracker
 
-path_ = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(path_, "dam4sam_config.yaml")) as f:
+from pathlib import Path
+config_path = Path(__file__).parent / "dam4sam_config.yaml"
+with open(config_path) as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
 seed = config["seed"]
@@ -24,18 +27,18 @@ torch.cuda.manual_seed(seed)
 class DAM4SAMTracker():
     def __init__(self, tracker_name="sam21pp-L"):
         """
-        Constructor for the SAM 2.1++ tracking wrapper.
+        Constructor for the DAM4SAM (2 or 2.1) tracking wrapper.
 
         Args:
         - tracker_name (str): Name of the tracker to use. Options are:
-            - "sam21pp-L": SAM 2.1++ Hiera Large
-            - "sam21pp-B": SAM 2.1++ Hiera Base+
-            - "sam21pp-S": SAM 2.1++ Hiera Small
-            - "sam21pp-T": SAM 2.1++ Hiera Tiny
-            - "sam2pp-L": SAM 2++ Hiera Large
-            - "sam2pp-B": SAM 2++ Hiera Base+
-            - "sam2pp-S": SAM 2++ Hiera Small
-            - "sam2pp-T": SAM 2++ Hier Tiny
+            - "sam21pp-L": DAM4SAM (2.1) Hiera Large
+            - "sam21pp-B": DAM4SAM (2.1) Hiera Base+
+            - "sam21pp-S": DAM4SAM (2.1) Hiera Small
+            - "sam21pp-T": DAM4SAM (2.1) Hiera Tiny
+            - "sam2pp-L": DAM4SAM (2) Hiera Large
+            - "sam2pp-B": DAM4SAM (2) Hiera Base+
+            - "sam2pp-S": DAM4SAM (2) Hiera Small
+            - "sam2pp-T": DAM4SAM (2) Hier Tiny
         """
         self.checkpoint, self.model_cfg = determine_tracker(tracker_name)
 
@@ -43,22 +46,16 @@ class DAM4SAMTracker():
         self.input_image_size = 1024       
         self.img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)[:, None, None]
         self.img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)[:, None, None]
+        
+        self.predictor = build_sam2_video_predictor(self.model_cfg, self.checkpoint, device="cuda:0")
+        self.tracking_times = []
 
     def _prepare_image(self, img_pil):
-        """
-        Function to prepare an image for input to the model.
-
-        Args:
-        - img_pil (PIL Image): Input image.
-
-        Returns:
-        - img (torch tensor): Preprocessed image tensor.
-        """
-        img_np = np.array(img_pil.convert("RGB").resize((self.input_image_size, self.input_image_size)))
-        img = torch.from_numpy(img_np).permute(2, 0, 1).float() / 255.0
-
-        img -= self.img_mean
-        img /= self.img_std
+        # _load_img_as_tensor from SAM2
+        img = torch.from_numpy(np.array(img_pil)).to(self.inference_state["device"])
+        img = img.permute(2, 0, 1).float() / 255.0
+        img = F.resize(img, (self.input_image_size, self.input_image_size))
+        img = (img - self.img_mean) / self.img_std        
         return img
 
     @torch.inference_mode()
@@ -66,24 +63,23 @@ class DAM4SAMTracker():
         self,
     ):
         """Initialize an inference state."""
-        compute_device = "cuda:0" 
+        compute_device = torch.device("cuda")
         inference_state = {}
-        inference_state["images"] = None #Images are added later, frame-by-frame
-        inference_state["num_frames"] = 0 #Number of frames is updated later, frame-by-frame
+        inference_state["images"] = None # later add, step by step
+        inference_state["num_frames"] = 0 # later add, step by step
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
-        # this is useful when the video is very long and the GPU memory is limited
-        inference_state["offload_video_to_cpu"] = True
+        inference_state["offload_video_to_cpu"] = False
         # whether to offload the inference state to CPU memory
         # turning on this option saves the GPU memory at the cost of a lower tracking fps
         # (e.g. in a test case of 768x768 model, fps dropped from 27 to 24 when tracking one object
         # and from 24 to 21 when tracking two objects)
-        inference_state["offload_state_to_cpu"] = True
+        inference_state["offload_state_to_cpu"] = False
         # the original video height and width, used for resizing final output scores
-        inference_state["video_height"] = None #Adding this later, in tracker.initialize
-        inference_state["video_width"] =  None #Adding this later, in tracker.initialize
+        inference_state["video_height"] = None # later add, step by step
+        inference_state["video_width"] =  None # later add, step by step
         inference_state["device"] = compute_device
-        inference_state["storage_device"] = torch.device("cpu")
+        inference_state["storage_device"] = compute_device #torch.device("cpu")
         # inputs on each frame
         inference_state["point_inputs_per_obj"] = {}
         inference_state["mask_inputs_per_obj"] = {}
@@ -115,14 +111,18 @@ class DAM4SAMTracker():
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
+        inference_state["frames_tracked_per_obj"] = {}
         
-        return inference_state
+        self.img_mean = self.img_mean.to(compute_device)
+        self.img_std = self.img_std.to(compute_device)
 
+        return inference_state
+    
     @torch.inference_mode()
     def initialize(self, image, init_mask, bbox=None):
         """
         Initialize the tracker with the first frame and mask.
-        Function builds the SAM 2.1++ tracker and initializes it with the first frame and mask.
+        Function builds the DAM4SAM (2.1) tracker and initializes it with the first frame and mask.
 
         Args:
         - image (PIL Image): First frame of the video.
@@ -133,7 +133,6 @@ class DAM4SAMTracker():
         """
         if type(init_mask) is list:
             init_mask = init_mask[0]
-        self.predictor = build_sam2_video_predictor(self.model_cfg, self.checkpoint, device="cuda:0")
         self.frame_index = 0 # Current frame index, updated frame-by-frame
         self.object_sizes = [] # List to store object sizes (number of pixels) 
         self.last_added = -1 # Frame index of the last added frame into DRM memory
@@ -145,10 +144,13 @@ class DAM4SAMTracker():
         video_width, video_height = image.size 
         self.inference_state["video_height"] = video_height
         self.inference_state["video_width"] =  video_width
-        prepared_img = self._prepare_image(image).cpu()
+        prepared_img = self._prepare_image(image)
         self.inference_state["images"] = {0 : prepared_img}
         self.inference_state["num_frames"] = 1
         self.predictor.reset_state(self.inference_state)
+
+        # warm up the model
+        self.predictor._get_image_feature(self.inference_state, frame_idx=0, batch_size=1)
 
         if init_mask is None:
             if bbox is None:
@@ -158,14 +160,16 @@ class DAM4SAMTracker():
             # consider bbox initialization - estimate init mask from bbox first
             init_mask = self.estimate_mask_from_box(bbox)
 
-        # Initialize the tracker with the first frame and mask
+
         _, _, out_mask_logits = self.predictor.add_new_mask(
             inference_state=self.inference_state,
             frame_idx=0,
             obj_id=0,
             mask=init_mask,
         )   
+
         m = (out_mask_logits[0, 0] > 0).float().cpu().numpy().astype(np.uint8)
+        self.inference_state["images"].pop(self.frame_index)
 
         out_dict = {'pred_mask': m}
         return out_dict
@@ -182,8 +186,9 @@ class DAM4SAMTracker():
         Returns:
         - out_dict (dict): Dictionary containing the predicted mask for the current frame.
         """
+        torch.cuda.empty_cache()
         # Prepare the image for input to the model
-        prepared_img = self._prepare_image(image).unsqueeze(0).cpu()
+        prepared_img = self._prepare_image(image).unsqueeze(0)
         if not init:
             self.frame_index += 1
             self.inference_state["num_frames"] += 1
@@ -257,6 +262,8 @@ class DAM4SAMTracker():
 
             # Return the predicted mask for the current frame
             out_dict = {'pred_mask': m}
+
+            self.inference_state["images"].pop(self.frame_index)
             return out_dict
 
     def estimate_mask_from_box(self, bbox):

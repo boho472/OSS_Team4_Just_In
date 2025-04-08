@@ -1,4 +1,5 @@
 import os
+import time
 import yaml
 import torch
 import hydra
@@ -8,15 +9,17 @@ import numpy as np
 from PIL import Image
 
 from vot.dataset import load_dataset
-from vot.region.io import write_trajectory, read_trajectory
+from vot.region.io import read_trajectory, write_trajectory
 from vot.region.shapes import Mask
 
 from dam4sam_tracker import DAM4SAMTracker
-from utils.utils import get_seq_names, compute_seq_perf
+from utils.utils import get_seq_names
 from utils.dataset_utils import pil2array
 from utils.visualization_utils import VisualizerTracking
 
-with open("./dam4sam_config.yaml") as f:
+from pathlib import Path
+config_path = Path(__file__).parent / "dam4sam_config.yaml"
+with open(config_path) as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
 seed = config["seed"]
@@ -31,10 +34,14 @@ torch.cuda.manual_seed(seed)
 def run_sequence(tracker_name, dataset_path, sequence_names, output_dir=None):
     
     dataset = load_dataset(dataset_path)
-    perf_results = []
 
+    tracker = DAM4SAMTracker(tracker_name)
     for sequence_name in sequence_names:
-        tracker = DAM4SAMTracker(tracker_name)
+        # check if the results for this sequence already exist
+        if output_dir is not None:
+            if os.path.exists(os.path.join(output_dir, sequence_name, f"{sequence_name}.txt")):
+                continue
+            
         if output_dir is None:
             visualizer = VisualizerTracking()
 
@@ -52,24 +59,20 @@ def run_sequence(tracker_name, dataset_path, sequence_names, output_dir=None):
         
         for i, frame_idx in enumerate(frame_idxs[1:]):
             image = Image.open(sequence.frame(frame_idx).filename())
+
             outputs = tracker.track(image)
+
             pred_mask = outputs['pred_mask']
             pred_masks.append(Mask(pred_mask))
 
             if output_dir is None:
-                visualizer.show(pil2array(image), mask=pred_mask)
+                visualizer.show(pil2array(image), mask=pred_mask)   
 
-            
-        gt = sequence.groundtruth()
-        gt_mapped = [gt[idx_] for idx_ in frame_idxs]
-        perf_results.append(compute_seq_perf(pred_masks, gt_mapped, (img_width, img_height), sequence.name))
-        
         if output_dir is not None:
             os.makedirs(os.path.join(output_dir, sequence.name), exist_ok=True)
             write_trajectory(os.path.join(output_dir, sequence.name, f"{sequence.name}.txt"), pred_masks)
 
     hydra.core.global_hydra.GlobalHydra.instance().clear()
-    return perf_results
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize sequence.')
@@ -91,8 +94,7 @@ def main():
     else:
         seq_names = [args.sequence]
 
-    perf_results_list = run_sequence(tracker_name, args.dataset_path, seq_names, output_dir=args.output_dir)
-    print(perf_results_list)
-
+    run_sequence(tracker_name, args.dataset_path, seq_names, output_dir=args.output_dir)
+    
 if __name__ == "__main__":
     main()
