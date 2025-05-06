@@ -180,6 +180,16 @@ See [the project page](https://jovanavidenovic.github.io/dam-4-sam/) for qualita
 
 Our work is built on top of [SAM 2](https://github.com/facebookresearch/sam2?tab=readme-ov-file) by Meta FAIR.
 
+### Citation
+Please consider citing our paper if you found our work useful.
 
+```bibtex
+@InProceedings{dam4sam,
+  author = {Videnovic, Jovana and Lukezic, Alan and Kristan, Matej},
+  title = {A Distractor-Aware Memory for Visual Object Tracking with {SAM2}},
+  booktitle = {Comp. Vis. Patt. Recognition},
+  year = {2025}
+}
+```
 
 
