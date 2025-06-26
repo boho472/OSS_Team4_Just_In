@@ -813,7 +813,7 @@ class SAM2VideoPredictor(SAM2Base):
 
             # Resize the output mask to the original video resolution (we directly use
             # the mask scores on GPU for output to avoid any CPU conversion in between)
-            _, video_res_masks = self._get_orig_video_res_output(
+            _, video_res_masks_ = self._get_orig_video_res_output(
                 inference_state, pred_masks
             )
 
@@ -824,13 +824,14 @@ class SAM2VideoPredictor(SAM2Base):
                 all_ious = output_dict[storage_key][frame_idx]["all_pred_masks"][1]
                 all_masks = []
                 
+                # before = np.sum(video_res_masks.cpu().numpy())
                 for pred_mask_idx in range(len(all_pred_masks)):
                     _, video_res_masks = self._get_orig_video_res_output(
                         inference_state, all_pred_masks[pred_mask_idx].unsqueeze(0).unsqueeze(0)
                     )
-                    all_masks.append(video_res_masks)                
+                    all_masks.append(video_res_masks)         
                 
-                yield frame_idx, obj_ids, video_res_masks, (all_masks, all_ious)
+                yield frame_idx, obj_ids, video_res_masks_, (all_masks, all_ious)
             else:
                 yield frame_idx, obj_ids, video_res_masks
                 
