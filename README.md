@@ -13,6 +13,8 @@ Faculty of Computer and Information Science, University of Ljubljana
 ---
 
 ## 📢 News
+**Multi-target version of DAM4SAM** is now available on: https://github.com/alanlukezic/d4sm
+
 An **extended version of the paper** with additional analysis (including VOS datasets) is now available on arXiv:  
 👉 [Distractor-Aware Memory-Based Visual Object Tracking](https://arxiv.org/abs/2509.13864)
 
