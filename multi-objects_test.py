@@ -69,12 +69,12 @@ def test_multi_object_tracking():
 
     print(f"\n선택된 초기 bbox: {bboxes_init}")
 
-    # 3. 43프레임에서 새 객체 bbox 선택
+    # 3. 109프레임에서 새 객체 bbox 선택
     print("\n" + "=" * 50)
-    print("STEP 2: 43프레임에서 새로 등장하는 객체 선택")
+    print("STEP 2: 109프레임에서 새로 등장하는 객체 선택")
     print("=" * 50)
     new_bbox_list = select_bboxes_from_frame(
-        video_path, frame_idx=43, num_objects=1)
+        video_path, frame_idx=109, num_objects=1)
 
     if len(new_bbox_list) > 0:
         new_bbox = new_bbox_list[0]
@@ -106,11 +106,11 @@ def test_multi_object_tracking():
         frame_pil, bboxes=bboxes_init, obj_ids=obj_ids_init)
     print(f"Initialized objects: {result['obj_ids']}")
 
-    # 6. 프레임 1~42: 두 객체 추적
+    # 6. 프레임 1~108: 두 객체 추적
     all_results = {0: [result['pred_masks'][0]], 1: [result['pred_masks'][1]]}
 
-    print("\nTracking frames 1-42 with 2 objects...")
-    for frame_idx in range(1, 43):
+    print("\nTracking frames 1-108 with 2 objects...")
+    for frame_idx in range(1, 108):
         ret, frame = cap.read()
         if not ret:
             print(f"End of video at frame {frame_idx}")
@@ -128,8 +128,8 @@ def test_multi_object_tracking():
         if frame_idx % 10 == 0:
             print(f"Frame {frame_idx}: Tracked objects {result['obj_ids']}")
 
-    # 7. 프레임 43: 새 객체 추가
-    print("\nFrame 43: Adding new object (obj_id=2)...")
+    # 7. 프레임 109: 새 객체 추가
+    print("\nFrame 109: Adding new object (obj_id=2)...")
     ret, frame = cap.read()
     if ret and new_bbox is not None:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -150,9 +150,9 @@ def test_multi_object_tracking():
     else:
         print("Skipping new object addition...")
 
-    # 8. 프레임 44~끝: 세 객체 모두 추적
+    # 8. 프레임 110~끝: 세 객체 모두 추적
     print("\nTracking remaining frames with 3 objects...")
-    frame_idx = 44
+    frame_idx = 110
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -177,41 +177,40 @@ def test_multi_object_tracking():
 
     # 9. 결과 시각화
     print("\nVisualizing results...")
-    visualize_tracking_results(video_path, all_results)
+    visualize_tracking_results_avi(video_path, all_results)
 
     return all_results
 
 
-def visualize_tracking_results(video_path, all_results):
+def visualize_tracking_results_avi(video_path, all_results, output_path="tracking_output.avi"):
     """
-    추적 결과 시각화
+    추적 결과를 AVI 영상으로 저장
     """
     cap = cv2.VideoCapture(video_path)
 
-    # 몇 개 프레임만 샘플링해서 시각화
-    sample_frames = [0, 20, 42, 43, 60, 80]
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # AVI 형식
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
     colors = {
-        0: (255, 0, 0),    # 빨강
-        1: (0, 255, 0),    # 초록
-        2: (0, 0, 255),    # 파랑
+        0: (255, 0, 0),
+        1: (0, 255, 0),
+        2: (0, 0, 255),
     }
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    axes = axes.flatten()
-
-    for idx, frame_idx in enumerate(sample_frames):
-        if frame_idx >= len(all_results[0]):
-            continue
-
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    frame_idx = 0
+    while True:
         ret, frame = cap.read()
         if not ret:
-            continue
+            break
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # 각 객체의 마스크를 오버레이
         overlay = frame_rgb.copy()
+
         for obj_id, masks in all_results.items():
             if frame_idx < len(masks):
                 mask = masks[frame_idx]
@@ -219,16 +218,17 @@ def visualize_tracking_results(video_path, all_results):
                 overlay[mask > 0] = overlay[mask > 0] * \
                     0.5 + np.array(color) * 0.5
 
-        axes[idx].imshow(overlay)
-        axes[idx].set_title(f"Frame {frame_idx+1}")
-        axes[idx].axis('off')
+        overlay_bgr = cv2.cvtColor(overlay.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        out.write(overlay_bgr)
+
+        frame_idx += 1
 
     cap.release()
-    plt.tight_layout()
-    plt.savefig("tracking_results.png")
-    print("Results saved to tracking_results.png")
-    plt.show()
+    out.release()
+    print(f"Video saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    test_multi_object_tracking()
+    all_results = test_multi_object_tracking()
+    visualize_tracking_results_avi(
+        "multi_test_video.avi", all_results, "output.avi")
