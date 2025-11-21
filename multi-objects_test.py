@@ -69,12 +69,12 @@ def test_multi_object_tracking():
 
     print(f"\n선택된 초기 bbox: {bboxes_init}")
 
-    # 3. 113프레임에서 새 객체 bbox 선택
+    # 3. 120프레임에서 새 객체 bbox 선택
     print("\n" + "=" * 50)
-    print("STEP 2: 109프레임에서 새로 등장하는 객체 선택")
+    print("STEP 2: 120프레임에서 새로 등장하는 객체 선택")
     print("=" * 50)
     new_bbox_list = select_bboxes_from_frame(
-        video_path, frame_idx=113, num_objects=1)
+        video_path, frame_idx=120, num_objects=1)
 
     if len(new_bbox_list) > 0:
         new_bbox = new_bbox_list[0]
@@ -106,11 +106,11 @@ def test_multi_object_tracking():
         frame_pil, bboxes=bboxes_init, obj_ids=obj_ids_init)
     print(f"Initialized objects: {result['obj_ids']}")
 
-    # 6. 프레임 1~112: 두 객체 추적
+    # 6. 프레임 1~119: 두 객체 추적
     all_results = {0: [result['pred_masks'][0]], 1: [result['pred_masks'][1]]}
 
-    print("\nTracking frames 1-112 with 2 objects...")
-    for frame_idx in range(1, 112):
+    print("\nTracking frames 1-119 with 2 objects...")
+    for frame_idx in range(1, 119):
         ret, frame = cap.read()
         if not ret:
             print(f"End of video at frame {frame_idx}")
@@ -128,8 +128,8 @@ def test_multi_object_tracking():
         if frame_idx % 10 == 0:
             print(f"Frame {frame_idx}: Tracked objects {result['obj_ids']}")
 
-    # 7. 프레임 113: 새 객체 추가
-    print("\nFrame 113: Adding new object (obj_id=2)...")
+    # 7. 프레임 120: 새 객체 추가
+    print("\nFrame 120: Adding new object (obj_id=2)...")
     ret, frame = cap.read()
     if ret and new_bbox is not None:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -150,9 +150,9 @@ def test_multi_object_tracking():
     else:
         print("Skipping new object addition...")
 
-    # 8. 프레임 114~끝: 세 객체 모두 추적
+    # 8. 프레임 121~끝: 세 객체 모두 추적
     print("\nTracking remaining frames with 3 objects...")
-    frame_idx = 114
+    frame_idx = 121
     while True:
         ret, frame = cap.read()
         if not ret:
