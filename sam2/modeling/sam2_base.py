@@ -567,14 +567,14 @@ class SAM2Base(torch.nn.Module):
                     else:
                         out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
 
-                    if out is None or out['n_pixels_pos'] < 1 or prev_frame_idx in selected_cond_outputs:
+                    if out is None or out['n_pixels_pos'].sum() < 1 or prev_frame_idx in selected_cond_outputs:
                         # on this memory frame target is considered as absent
                         # thus we need to find older frame where target was visible
                         while True:
                             prev_frame_idx -= 1
                             if prev_frame_idx > 0:
                                 out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
-                                if out is not None and out['n_pixels_pos'] >= 1 and prev_frame_idx not in selected_cond_outputs:
+                                if out is not None and out['n_pixels_pos'].sum() >= 1 and prev_frame_idx not in selected_cond_outputs:
                                     break
                             else:
                                 out = None
@@ -582,7 +582,7 @@ class SAM2Base(torch.nn.Module):
                 elif prev_frame_idx >= 0:
                     prev_frame_idx = ((prev_frame_idx - 1) // r) * r
                     out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
-                    if out is None or out['n_pixels_pos'] < 1 or prev_frame_idx in selected_cond_outputs:
+                    if out is None or out['n_pixels_pos'].sum() < 1 or prev_frame_idx in selected_cond_outputs:
 
                         # on this memory frame target is considered as absent
                         # thus we need to find older frame where target was visible
@@ -590,7 +590,7 @@ class SAM2Base(torch.nn.Module):
                             prev_frame_idx -= r
                             if prev_frame_idx > 0:
                                 out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
-                                if out is not None and out['n_pixels_pos'] >= 1 and prev_frame_idx not in selected_cond_outputs:
+                                if out is not None and out['n_pixels_pos'].sum() >= 1 and prev_frame_idx not in selected_cond_outputs:
                                     break
                             else:
                                 out = None
@@ -621,10 +621,39 @@ class SAM2Base(torch.nn.Module):
                 # "maskmem_features" might have been offloaded to CPU in demo use cases,
                 # so we load it back to GPU (it's a no-op if it's already on GPU).
                 feats = prev["maskmem_features"].cuda(non_blocking=True)
-                to_cat_memory.append(feats.flatten(2).permute(2, 0, 1))
+                feats_flat = feats.flatten(2).permute(2, 0, 1)  # [HW, B_old, C]
+                
+                # Handle batch size mismatch: pad features to match current batch size B
+                feats_batch_size = feats_flat.size(1)  # B_old
+                if feats_batch_size < B:
+                    # Pad with zeros to match current batch size
+                    # feats_flat shape: [HW, B_old, C] -> [HW, B, C]
+                    padding = torch.zeros(
+                        feats_flat.size(0), B - feats_batch_size, feats_flat.size(2),
+                        device=feats_flat.device, dtype=feats_flat.dtype
+                    )
+                    feats_flat = torch.cat([feats_flat, padding], dim=1)
+                elif feats_batch_size > B:
+                    # Truncate if somehow we have more objects (shouldn't happen normally)
+                    feats_flat = feats_flat[:, :B, :]
+                
+                to_cat_memory.append(feats_flat)
+                
                 # Spatial positional encoding (it might have been offloaded to CPU in eval)
                 maskmem_enc = prev["maskmem_pos_enc"][-1].cuda()
-                maskmem_enc = maskmem_enc.flatten(2).permute(2, 0, 1)
+                maskmem_enc = maskmem_enc.flatten(2).permute(2, 0, 1)  # [HW, B_old, C]
+                
+                # Handle batch size mismatch for positional encoding as well
+                enc_batch_size = maskmem_enc.size(1)
+                if enc_batch_size < B:
+                    padding = torch.zeros(
+                        maskmem_enc.size(0), B - enc_batch_size, maskmem_enc.size(2),
+                        device=maskmem_enc.device, dtype=maskmem_enc.dtype
+                    )
+                    maskmem_enc = torch.cat([maskmem_enc, padding], dim=1)
+                elif enc_batch_size > B:
+                    maskmem_enc = maskmem_enc[:, :B, :]
+                
                 # Temporal positional encoding
                 maskmem_enc = (
                     maskmem_enc + self.maskmem_tpos_enc[total_num_maskmem - t_pos - 1]
@@ -658,14 +687,29 @@ class SAM2Base(torch.nn.Module):
                     out = output_dict["non_cond_frame_outputs"].get(
                         t, unselected_cond_outputs.get(t, None)
                     )
-                    if out is not None and out['n_pixels_pos'] >= 1:  # use only when object visible
+                    if out is not None and out['n_pixels_pos'].sum() >= 1:  # use only when object visible
                         pos_and_ptrs.append((t_diff, out["obj_ptr"]))
 
                 # If we have at least one object pointer, add them to the across attention
                 if len(pos_and_ptrs) > 0:
                     pos_list, ptrs_list = zip(*pos_and_ptrs)
+                    
+                    # Handle batch size mismatch: pad obj_ptr tensors to match current batch size B
+                    # This is needed when adding new objects mid-video (e.g., frame 0 has 1 object, frame 5 has 2 objects)
+                    padded_ptrs_list = []
+                    for ptr in ptrs_list:
+                        ptr_batch_size = ptr.size(0)  # Number of objects in this past frame
+                        if ptr_batch_size < B:
+                            # Pad with zeros to match current batch size
+                            padding = torch.zeros(B - ptr_batch_size, ptr.size(1), device=ptr.device, dtype=ptr.dtype)
+                            padded_ptr = torch.cat([ptr, padding], dim=0)
+                            padded_ptrs_list.append(padded_ptr)
+                        else:
+                            # No padding needed (or we need to truncate, but this shouldn't happen in normal usage)
+                            padded_ptrs_list.append(ptr[:B])  # Take only first B objects if somehow we have more
+                    
                     # stack object pointers along dim=0 into [ptr_seq_len, B, C] shape
-                    obj_ptrs = torch.stack(ptrs_list, dim=0)
+                    obj_ptrs = torch.stack(padded_ptrs_list, dim=0)
                     # a temporal positional embedding based on how far each object pointer is from
                     # the current frame (sine embedding normalized by the max pointer num).
                     if self.add_tpos_enc_to_obj_ptrs:

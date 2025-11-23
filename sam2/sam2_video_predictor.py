@@ -147,7 +147,8 @@ class SAM2VideoPredictor(SAM2Base):
         # This is a new object id not sent to the server before. We only allow adding
         # new objects *before* the tracking starts.
         allow_new_object = not inference_state["tracking_has_started"]
-        if allow_new_object:
+        # Allow adding new objects even after tracking starts (Experimental Fix)
+        if True: # allow_new_object:
             # get the next object slot
             obj_idx = len(inference_state["obj_id_to_idx"])
             inference_state["obj_id_to_idx"][obj_id] = obj_idx
@@ -166,12 +167,12 @@ class SAM2VideoPredictor(SAM2Base):
                 "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             }
             return obj_idx
-        else:
-            raise RuntimeError(
-                f"Cannot add new object id {obj_id} after tracking starts. "
-                f"All existing object ids: {inference_state['obj_ids']}. "
-                f"Please call 'reset_state' to restart from scratch."
-            )
+        # else:
+        #     raise RuntimeError(
+        #         f"Cannot add new object id {obj_id} after tracking starts. "
+        #         f"All existing object ids: {inference_state['obj_ids']}. "
+        #         f"Please call 'reset_state' to restart from scratch."
+        #     )
 
     def _obj_idx_to_id(self, inference_state, obj_idx):
         """Map model-side object index to client-side object id."""
@@ -263,7 +264,11 @@ class SAM2VideoPredictor(SAM2Base):
         # frame, meaning that the inputs points are to generate segments on this frame without
         # using any memory from other frames, like in SAM. Otherwise (if it has been tracked),
         # the input points will be used to correct the already tracked masks.
-        is_init_cond_frame = frame_idx not in inference_state["frames_already_tracked"]
+        obj_output_dict = inference_state["output_dict_per_obj"][obj_idx]
+        has_history = (len(obj_output_dict["cond_frame_outputs"]) > 0 or 
+                       len(obj_output_dict["non_cond_frame_outputs"]) > 0)
+        is_init_cond_frame = (frame_idx not in inference_state["frames_already_tracked"]) or (not has_history)
+        print(f"DEBUG: frame_idx={frame_idx}, obj_idx={obj_idx}, has_history={has_history}, is_init_cond_frame={is_init_cond_frame}")
         # whether to track in reverse time order
         if is_init_cond_frame:
             reverse = False
@@ -403,7 +408,11 @@ class SAM2VideoPredictor(SAM2Base):
         # frame, meaning that the inputs points are to generate segments on this frame without
         # using any memory from other frames, like in SAM. Otherwise (if it has been tracked),
         # the input points will be used to correct the already tracked masks.
-        is_init_cond_frame = frame_idx not in inference_state["frames_already_tracked"]
+        obj_output_dict = inference_state["output_dict_per_obj"][obj_idx]
+        has_history = (len(obj_output_dict["cond_frame_outputs"]) > 0 or 
+                       len(obj_output_dict["non_cond_frame_outputs"]) > 0)
+        is_init_cond_frame = (frame_idx not in inference_state["frames_already_tracked"]) or (not has_history)
+        print(f"DEBUG: frame_idx={frame_idx}, obj_idx={obj_idx}, has_history={has_history}, is_init_cond_frame={is_init_cond_frame}")
         # whether to track in reverse time order
         if is_init_cond_frame:
             reverse = False
@@ -705,9 +714,15 @@ class SAM2VideoPredictor(SAM2Base):
         # output on the same frame in "non_cond_frame_outputs"
         for frame_idx in output_dict["cond_frame_outputs"]:
             output_dict["non_cond_frame_outputs"].pop(frame_idx, None)
-        for obj_output_dict in inference_state["output_dict_per_obj"].values():
-            for frame_idx in obj_output_dict["cond_frame_outputs"]:
-                obj_output_dict["non_cond_frame_outputs"].pop(frame_idx, None)
+            for obj_idx, obj_output_dict in inference_state["output_dict_per_obj"].items():
+                has_history = (len(obj_output_dict["cond_frame_outputs"]) > 0 or
+                               len(obj_output_dict["non_cond_frame_outputs"]) > 0)
+                is_init_cond_frame = (frame_idx not in inference_state["frames_already_tracked"]) or (not has_history)
+                print(f"DEBUG: frame_idx={frame_idx}, obj_idx={obj_idx}, has_history={has_history}, is_init_cond_frame={is_init_cond_frame}")
+                print(f"DEBUG: cond_outputs={len(obj_output_dict['cond_frame_outputs'])}, non_cond={len(obj_output_dict['non_cond_frame_outputs'])}")
+                # whether to track in reverse time order
+                if is_init_cond_frame:
+                    obj_output_dict["non_cond_frame_outputs"].pop(frame_idx, None)
         for frame_idx in consolidated_frame_inds["cond_frame_outputs"]:
             assert frame_idx in output_dict["cond_frame_outputs"]
             consolidated_frame_inds["non_cond_frame_outputs"].discard(frame_idx)
@@ -833,7 +848,7 @@ class SAM2VideoPredictor(SAM2Base):
                 
                 yield frame_idx, obj_ids, video_res_masks_, (all_masks, all_ious)
             else:
-                yield frame_idx, obj_ids, video_res_masks
+                yield frame_idx, obj_ids, video_res_masks_
                 
     def _add_output_per_object(
         self, inference_state, frame_idx, current_out, storage_key

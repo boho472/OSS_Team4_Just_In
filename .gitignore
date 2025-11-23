@@ -7,3 +7,19 @@ build/*
 _C.*
 outputs/*
 checkpoints/*.pt
+
+# Data directories
+datasets/
+n1/
+n1_frames/
+output_*/
+didi-workspace/
+
+# Log files
+*.log
+
+# Generated videos
+*.mp4
+
+# YOLO model weights
+*.pt

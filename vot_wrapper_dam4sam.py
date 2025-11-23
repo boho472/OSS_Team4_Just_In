@@ -12,7 +12,7 @@ import random
 import os
 import yaml
 
-with open("./dam4sam_config.yaml") as f:
+with open("/home/2020112001/DAM4SAM/dam4sam_config.yaml") as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
 seed = config["seed"]
