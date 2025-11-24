@@ -590,7 +590,14 @@ class SAM2Base(torch.nn.Module):
                         out = output_dict["non_cond_frame_outputs"].get(
                             prev_frame_idx, None)
 
-                    if out is None or out['n_pixels_pos'].item() < 1 or prev_frame_idx in selected_cond_outputs:
+                    if out is not None:
+                        n_pixels_check = out['n_pixels_pos'] < 1
+                        if isinstance(n_pixels_check, torch.Tensor):
+                            n_pixels_check = n_pixels_check.any()
+                    else:
+                        n_pixels_check = True
+
+                    if out is None or n_pixels_check or prev_frame_idx in selected_cond_outputs:
                         # on this memory frame target is considered as absent
                         # thus we need to find older frame where target was visible
                         while True:
@@ -598,8 +605,12 @@ class SAM2Base(torch.nn.Module):
                             if prev_frame_idx > 0:
                                 out = output_dict["non_cond_frame_outputs"].get(
                                     prev_frame_idx, None)
-                                if out is not None and out['n_pixels_pos'].item() >= 1 and prev_frame_idx not in selected_cond_outputs:
-                                    break
+                                if out is not None:
+                                    n_pixels_check = out['n_pixels_pos'] >= 1
+                                    if isinstance(n_pixels_check, torch.Tensor):
+                                        n_pixels_check = n_pixels_check.all()
+                                    if n_pixels_check and prev_frame_idx not in selected_cond_outputs:
+                                        break
                             else:
                                 out = None
                                 break
@@ -607,8 +618,15 @@ class SAM2Base(torch.nn.Module):
                     prev_frame_idx = ((prev_frame_idx - 1) // r) * r
                     out = output_dict["non_cond_frame_outputs"].get(
                         prev_frame_idx, None)
-                    if out is None or out['n_pixels_pos'].item() < 1 or prev_frame_idx in selected_cond_outputs:
 
+                    if out is not None:
+                        n_pixels_check = out['n_pixels_pos'] < 1
+                        if isinstance(n_pixels_check, torch.Tensor):
+                            n_pixels_check = n_pixels_check.any()
+                    else:
+                        n_pixels_check = True
+
+                    if out is None or n_pixels_check or prev_frame_idx in selected_cond_outputs:
                         # on this memory frame target is considered as absent
                         # thus we need to find older frame where target was visible
                         while True:
@@ -616,11 +634,13 @@ class SAM2Base(torch.nn.Module):
                             if prev_frame_idx > 0:
                                 out = output_dict["non_cond_frame_outputs"].get(
                                     prev_frame_idx, None)
-                                if out is not None and out['n_pixels_pos'].item() >= 1 and prev_frame_idx not in selected_cond_outputs:
-                                    break
-                            else:
-                                out = None
-                                break
+                                if out is not None:
+                                    n_pixels_check = out['n_pixels_pos'] >= 1
+
+                                    if isinstance(n_pixels_check, torch.Tensor):
+                                        n_pixels_check = n_pixels_check.all()
+                                    if n_pixels_check and prev_frame_idx not in selected_cond_outputs:
+                                        break
                 else:
                     out = None
 
@@ -689,8 +709,12 @@ class SAM2Base(torch.nn.Module):
                         t, unselected_cond_outputs.get(t, None)
                     )
                     # use only when object visible
-                    if out is not None and out['n_pixels_pos'].item() >= 1:
-                        pos_and_ptrs.append((t_diff, out["obj_ptr"]))
+                    if out is not None:
+                        n_pixels_check = out['n_pixels_pos'] >= 1
+                        if isinstance(n_pixels_check, torch.Tensor):
+                            n_pixels_check = n_pixels_check.all()
+                        if n_pixels_check:
+                            pos_and_ptrs.append((t_diff, out["obj_ptr"]))
 
                 # If we have at least one object pointer, add them to the across attention
                 if len(pos_and_ptrs) > 0:
