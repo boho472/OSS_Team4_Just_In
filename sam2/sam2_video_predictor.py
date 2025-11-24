@@ -460,6 +460,13 @@ class SAM2VideoPredictor(SAM2Base):
         video_H = inference_state["video_height"]
         video_W = inference_state["video_width"]
         any_res_masks = any_res_masks.to(device, non_blocking=True)
+
+        if any_res_masks.dim() == 3:  # [C, H, W] 형태인 경우
+            any_res_masks = any_res_masks.unsqueeze(0)  # [1, C, H, W]로 변경
+            squeeze_needed = True
+        else:
+            squeeze_needed = False
+
         if any_res_masks.shape[-2:] == (video_H, video_W):
             video_res_masks = any_res_masks
         else:
@@ -469,6 +476,10 @@ class SAM2VideoPredictor(SAM2Base):
                 mode="bilinear",
                 align_corners=False,
             )
+
+        if squeeze_needed:
+            any_res_masks = any_res_masks.squeeze(0)
+            video_res_masks = video_res_masks.squeeze(0)
 
         if self.non_overlap_masks:
             video_res_masks = self._apply_non_overlapping_constraints(
