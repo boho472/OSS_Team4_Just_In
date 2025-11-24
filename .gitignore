@@ -8,3 +8,6 @@ _C.*
 outputs/*
 checkpoints/*.pt
 *.pt
+*.pth
+*.avi
+sam2.1_hiera_large.pt
