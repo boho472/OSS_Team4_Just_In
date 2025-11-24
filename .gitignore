@@ -9,15 +9,12 @@ outputs/*
 checkpoints/*.pt
 *.pt
 *.pth
-*.avi
+
 sam2.1_hiera_large.pt# Virtual Environment
 venv/
 env/
 .venv/
-# Video files
-*.avi
-*.mp4
-*.mov
+
 # Compiled files
 *.so
 *.pyc
