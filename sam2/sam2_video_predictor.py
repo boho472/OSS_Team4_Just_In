@@ -461,12 +461,19 @@ class SAM2VideoPredictor(SAM2Base):
         video_W = inference_state["video_width"]
         any_res_masks = any_res_masks.to(device, non_blocking=True)
 
+        # 디버그: shape 출력
+        print(
+            f"DEBUG: any_res_masks.shape = {any_res_masks.shape}, dim = {any_res_masks.dim()}")
+
         if any_res_masks.dim() == 3:  # [C, H, W] 형태인 경우
+            print(f"DEBUG: Converting from 3D to 4D")
             any_res_masks = any_res_masks.unsqueeze(0)  # [1, C, H, W]로 변경
             squeeze_needed = True
         else:
             squeeze_needed = False
 
+        print(
+            f"DEBUG: After conversion: any_res_masks.shape = {any_res_masks.shape}")
         if any_res_masks.shape[-2:] == (video_H, video_W):
             video_res_masks = any_res_masks
         else:
