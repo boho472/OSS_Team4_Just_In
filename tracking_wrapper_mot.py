@@ -374,7 +374,7 @@ class DAM4SAMMOT():
 
         # prepare image
         img = self._prepare_image(image)
-        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+        img = img.unsqueeze(0)
         
         # compute features
         feats, pos, feat_sizes = self._get_features(img)
@@ -440,19 +440,22 @@ class DAM4SAMMOT():
         m = [(m_[0] > 0).float().cpu().numpy().astype(np.uint8) for m_ in masks_out]
         n_pixels_pos = [m_single.sum() for m_single in m]
         
-        # ✅ maskmem_features를 CPU로 이동
-        maskmem_features = current_out["maskmem_features"].to(torch.bfloat16)
-        maskmem_features = maskmem_features.to(self.storage_device, non_blocking=True)
+        # ✅ 1. 먼저 CPU로 복사
+        maskmem_features_cpu = current_out["maskmem_features"].to(torch.bfloat16).to(self.storage_device, non_blocking=True)
+        pred_masks_cpu = pred_masks_gpu.detach().cpu()
+        
+        # ✅ 2. current_out의 GPU 텐서를 즉시 None으로 설정
+        current_out["maskmem_features"] = None
+        current_out["pred_masks"] = None
+        current_out["multimasks_logits"] = None
+        
+        # ✅ 3. 즉시 삭제 및 캐시 비우기
+        del pred_masks_gpu, masks_out
+        torch.cuda.empty_cache()
         
         alternative_masks_all = torch.nn.functional.interpolate(current_out["multimasks_logits"], size=sz_, mode="bilinear", align_corners=False)
         alternative_masks_all = (alternative_masks_all > 0).detach().cpu().numpy().astype(np.uint8)
         all_ious = current_out["ious"].detach().cpu().numpy()
-        
-        # ✅ pred_masks를 CPU로 복사 (저장용)
-        pred_masks_cpu = pred_masks_gpu.detach().cpu()
-        
-        # ❌ 이 줄 삭제! obj_ptr는 GPU에 유지
-        # obj_ptrs_cpu = current_out["obj_ptr"].detach().cpu()
 
         for obj_idx, obj_id in enumerate(self.all_obj_ids):
 
@@ -467,9 +470,8 @@ class DAM4SAMMOT():
             if n_pixels_pos[obj_idx] > 0:
                 obj_mem = self.per_object_outputs_all[obj_id]
 
-                # ✅ obj_ptr는 GPU 버전 그대로 사용
                 per_obj_obj_ptr_dict = {
-                    "obj_ptr": current_out["obj_ptr"][obj_idx].unsqueeze(0),  # GPU에 유지
+                    "obj_ptr": current_out["obj_ptr"][obj_idx].unsqueeze(0),
                     "frame_idx": self.frame_index, 
                     "is_init": False
                 }
@@ -484,10 +486,10 @@ class DAM4SAMMOT():
                     if rem_idx:
                         obj_mem_obj_ptr.pop(rem_idx)
 
-                # ✅ maskmem_features와 pred_masks는 CPU 버전 사용
+                # ✅ CPU 버전 사용
                 per_obj_dict = {
-                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # CPU
-                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # CPU
+                    "maskmem_features": maskmem_features_cpu[obj_idx].unsqueeze(0),
+                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),
                     "is_init": False, 
                     "frame_idx": self.frame_index, 
                     "is_drm": False
@@ -544,10 +546,9 @@ class DAM4SAMMOT():
                             if np.min(np.array(ious)) <= 0.7:
                                 self.last_added[obj_idx] = self.frame_index
                                 
-                                # ✅ DRM에도 CPU 버전 사용
                                 per_obj_dict_drm = {
-                                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # CPU
-                                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # CPU
+                                    "maskmem_features": maskmem_features_cpu[obj_idx].unsqueeze(0),
+                                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),
                                     "is_init": False, 
                                     "frame_idx": self.frame_index, 
                                     "is_drm": True
@@ -566,9 +567,8 @@ class DAM4SAMMOT():
                                             ram_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and not mem_el['is_drm'])]
                                             obj_mem.pop(ram_idxs[0])
 
-        # ✅ GPU 텐서 정리 (큰 것들만)
-        del pred_masks_gpu, masks_out, feats, pos
-        # current_out["obj_ptr"]는 작아서 유지해도 됨 (다음 프레임에서 사용)
+        # ✅ 최종 정리
+        del current_out, feats, pos, maskmem_features_cpu, pred_masks_cpu
         torch.cuda.empty_cache()
 
         outputs = {'masks': m}
