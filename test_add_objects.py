@@ -258,7 +258,7 @@ def test_add_objects(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
     # Initialize tracker
     print("Initializing tracker...")
     tracker = DAM4SAMMOT(
-        model_size='base',
+        model_size='small',
         checkpoint_dir=checkpoint_dir,
         offload_state_to_cpu=True
     )
