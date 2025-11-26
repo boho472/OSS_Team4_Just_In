@@ -588,15 +588,7 @@ class DAM4SAMMOT():
     def add_new_objects(self, frame_idx, image, regions):
         """
         Add multiple new objects to track starting from the specified frame.
-        
-        Args:
-            frame_idx: Current frame index where new objects appear
-            image: PIL Image of the current frame
-            regions: List of dicts with 'bbox' or 'mask' for each new object
-                    예: [{'bbox': [x, y, w, h]}, {'bbox': [x2, y2, w2, h2]}]
-        
-        Returns:
-            new_obj_ids: List of internal IDs assigned to new objects
+        Uses DAM4SAM's per-object memory structure.
         """
         if not regions or len(regions) == 0:
             return []
@@ -607,7 +599,7 @@ class DAM4SAMMOT():
         
         # prepare image
         img = self._prepare_image(image)
-        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+        img = img.unsqueeze(0)
         
         # compute features
         feats, pos, feat_sizes = self._get_features(img, num_obj=1)
@@ -618,7 +610,7 @@ class DAM4SAMMOT():
         for reg_idx, reg in enumerate(regions):
             print(f"\nProcessing new object {reg_idx + 1}/{len(regions)}...")
             
-            # Process bbox or mask input
+            # Process bbox or mask input (동일)
             if 'bbox' in reg:
                 bbox = reg['bbox']
                 box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
@@ -646,6 +638,7 @@ class DAM4SAMMOT():
                 mask_inputs_ = None
                 
             elif 'mask' in reg:
+                # mask 처리 (동일)
                 mask = reg['mask']
                 if not isinstance(mask, torch.Tensor):
                     mask = torch.tensor(mask, dtype=torch.bool)
@@ -669,8 +662,24 @@ class DAM4SAMMOT():
             else:
                 raise ValueError('Error: region must contain "bbox" or "mask".')
 
-            # Run SAM to initialize this new object
-            output_dict_ = {'per_obj_dict': {}, 'maskmem_pos_enc': None}
+            # ✅ 수정: DAM4SAM의 완전한 메모리 구조 사용
+            # 새 객체를 위한 임시 ID 생성 (실제 추가 전)
+            temp_obj_id = self.next_obj_id
+            
+            # 기존 객체들의 메모리를 포함한 output_dict 구성
+            output_dict_ = {
+                'per_obj_dict': self.per_object_outputs_all.copy(),  # ✅ 기존 객체들
+                'per_obj_obj_ptr_dict': self.per_object_obj_ptr.copy(),  # ✅ 기존 포인터들
+                'maskmem_pos_enc': self.output_dict['maskmem_pos_enc'],  # ✅ 위치 인코딩
+                'obj_ids_list': self.all_obj_ids.copy()  # ✅ 기존 객체 ID들
+            }
+            
+            # 새 객체를 위한 빈 메모리 구조 추가
+            output_dict_['per_obj_dict'][temp_obj_id] = []
+            output_dict_['per_obj_obj_ptr_dict'][temp_obj_id] = []
+            output_dict_['obj_ids_list'].append(temp_obj_id)
+
+            # Run SAM with full DAM4SAM structure
             current_out = self.sam.track_step(
                 frame_idx=frame_idx,
                 is_init_cond_frame=True,
@@ -679,7 +688,7 @@ class DAM4SAMMOT():
                 feat_sizes=feat_sizes,
                 point_inputs=point_inputs_,
                 mask_inputs=mask_inputs_,
-                output_dict=output_dict_,
+                output_dict=output_dict_,  # ✅ 완전한 구조
                 num_frames=self.n_frames,
                 track_in_reverse=False,
                 run_mem_encoder=False,
@@ -702,7 +711,7 @@ class DAM4SAMMOT():
                 align_corners=False,
             )
 
-            # Encode memory for this new object
+            # Encode memory
             maskmem_features, maskmem_pos_enc = self.sam._encode_new_memory(
                 current_vision_feats=feats,
                 feat_sizes=feat_sizes,
@@ -719,7 +728,7 @@ class DAM4SAMMOT():
                 maskmem_pos_enc_ = self.maskmem_pos_enc[0].to(img.device)
                 self.output_dict['maskmem_pos_enc'] = maskmem_pos_enc_
 
-            # Create memory dict for this new object
+            # Create memory dict
             per_obj_dict = {
                 "maskmem_features": maskmem_features,
                 "pred_masks": pred_masks,
@@ -734,8 +743,8 @@ class DAM4SAMMOT():
                 "is_init": True
             }
             
-            # Assign new internal ID
-            new_obj_id = self.next_obj_id
+            # Assign new internal ID (temp_obj_id를 실제로 사용)
+            new_obj_id = temp_obj_id
             
             # Add to tracking structures
             self.per_object_outputs_all[new_obj_id] = [per_obj_dict]
