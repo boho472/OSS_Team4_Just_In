@@ -359,20 +359,20 @@ def test_add_objects(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
 
 def quick_preview(video_dir, frame_idx=0, grid_size=50):
     """Quickly preview a frame with grid"""
-    frame_path = os.path.join(video_dir, f"frame_{frame_idx:04d}.jpg")
-    if not os.path.exists(frame_path):
-        frame_path = os.path.join(video_dir, f"{frame_idx:08d}.jpg")
-    
-    show_image_with_grid(frame_path, grid_size)
+    try:
+        frame_path = find_frame_path(video_dir, frame_idx)  # ✅ 수정
+        show_image_with_grid(frame_path, grid_size)
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
 
 
 def quick_verify_bbox(video_dir, frame_idx, bboxes):
     """Quickly verify bboxes on a frame"""
-    frame_path = os.path.join(video_dir, f"frame_{frame_idx:04d}.jpg")
-    if not os.path.exists(frame_path):
-        frame_path = os.path.join(video_dir, f"{frame_idx:08d}.jpg")
-    
-    show_image_with_bboxes(frame_path, bboxes)
+    try:
+        frame_path = find_frame_path(video_dir, frame_idx)  # ✅ 수정
+        show_image_with_bboxes(frame_path, bboxes)
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
 
 
 # ===== Usage Example =====
