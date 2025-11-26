@@ -30,28 +30,38 @@ def _load_checkpoint(model, ckpt_path):
         logging.info("Loaded checkpoint sucessfully")
 
 def build_sam(config_file, ckpt_path=None, device="cuda", mode="eval", hydra_overrides_extra=[], apply_postprocessing=True):
-    # hydra_overrides = [
-    #     "++model._target_=sam2.sam2_video_predictor.SAM2VideoPredictor",
-    # ]
-    hydra_overrides = []
-    if apply_postprocessing:
-        hydra_overrides_extra = hydra_overrides_extra.copy()
-        hydra_overrides_extra += [
-            # dynamically fall back to multi-mask if the single mask is not stable
-            "++model.sam_mask_decoder_extra_args.dynamic_multimask_via_stability=true",
-            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_delta=0.05",
-            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_thresh=0.98",
-            # the sigmoid mask logits on interacted frames with clicks in the memory encoder so that the encoded masks are exactly as what users see from clicking
-            "++model.binarize_mask_from_pts_for_mem_enc=true",
-            # fill small holes in the low-res masks up to `fill_hole_area` (before resizing them to the original video resolution)
-            # "++model.fill_hole_area=8",  # [AL] commented out due to different SAM class
-        ]
-    hydra_overrides.extend(hydra_overrides_extra)
+    from hydra import initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    import os
+    
+    # ✅ 추가: Hydra 초기화
+    GlobalHydra.instance().clear()
+    config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "sam2/configs/sam2.1"))
+    
+    # ✅ with 문으로 감싸기
+    with initialize_config_dir(config_dir=config_dir, version_base=None):
+        # 기존 코드 (들여쓰기만 추가)
+        hydra_overrides = []
+        if apply_postprocessing:
+            hydra_overrides_extra = hydra_overrides_extra.copy()
+            hydra_overrides_extra += [
+                # dynamically fall back to multi-mask if the single mask is not stable
+                "++model.sam_mask_decoder_extra_args.dynamic_multimask_via_stability=true",
+                "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_delta=0.05",
+                "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_thresh=0.98",
+                # the sigmoid mask logits on interacted frames with clicks in the memory encoder so that the encoded masks are exactly as what users see from clicking
+                "++model.binarize_mask_from_pts_for_mem_enc=true",
+                # fill small holes in the low-res masks up to `fill_hole_area` (before resizing them to the original video resolution)
+                # "++model.fill_hole_area=8",  # [AL] commented out due to different SAM class
+            ]
+        hydra_overrides.extend(hydra_overrides_extra)
 
-    # Read config and init model
-    cfg = compose(config_name=config_file, overrides=hydra_overrides)
-    OmegaConf.resolve(cfg)
-    model = instantiate(cfg.model, _recursive_=True)
+        # Read config and init model
+        cfg = compose(config_name=config_file, overrides=hydra_overrides)
+        OmegaConf.resolve(cfg)
+        model = instantiate(cfg.model, _recursive_=True)
+    
+    # ✅ with 문 밖으로 (들여쓰기 제거)
     _load_checkpoint(model, ckpt_path)
     model = model.to(device)
     if mode == "eval":
