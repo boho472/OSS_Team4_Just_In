@@ -80,22 +80,21 @@ def keep_largest_component(mask):
 def load_confs(chkpt_path, model_size):
     if model_size == 'large':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_large.pt')
-        model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_l.yaml"  # ✅ 수정
     elif model_size == 'base':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_base.pt')
-        model_cfg = "configs/sam2.1/sam2.1_hiera_b.yaml"
+        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_b.yaml"  # ✅ 수정
     elif model_size == 'small':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_small.pt')
-        model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
+        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_s.yaml"  # ✅ 수정
     elif model_size == 'tiny':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_tiny.pt')
-        model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
+        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_t.yaml"  # ✅ 수정
     else:
         print('Error: Unknown model size:', model_size)
         exit(-1)
     
     return checkpoint, model_cfg
-
 
 class DAM4SAMMOT():
     def __init__(self, model_size='large', checkpoint_dir=None, offload_state_to_cpu=False):
