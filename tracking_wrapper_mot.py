@@ -211,6 +211,174 @@ class DAM4SAMMOT():
     # *****************************************************************
     # **                        VOT Tracker                          **
     # *****************************************************************
+    
+    def _process_single_object_init(self, image, region, feats, pos, feat_sizes):
+        """
+        Process initialization for a single object (used by both initialize and add_object).
+        
+        Args:
+            image: PIL image
+            region: dict with 'mask', 'bbox', or 'points'
+            feats: backbone features
+            pos: position embeddings
+            feat_sizes: feature sizes
+            
+        Returns:
+            per_obj_dict: object memory dictionary
+            per_obj_obj_ptr_dict: object pointer dictionary
+            pred_mask: predicted mask (numpy array)
+        """
+        # Parse region input and create SAM inputs
+        if 'mask' in region:
+            mask = region['mask']
+            if not isinstance(mask, torch.Tensor):
+                mask = torch.tensor(mask, dtype=torch.bool)
+            mask_H, mask_W = mask.shape
+            mask_inputs_orig = mask[None, None]  # add batch and channel dimension
+            mask_inputs_orig = mask_inputs_orig.float().to(feats[0].device)
+
+            # resize the mask if it doesn't match the model's image size
+            if mask_H != self.sam.image_size or mask_W != self.sam.image_size:
+                mask_inputs = torch.nn.functional.interpolate(
+                    mask_inputs_orig,
+                    size=(self.sam.image_size, self.sam.image_size),
+                    align_corners=False,
+                    mode="bilinear",
+                    antialias=True,  # use antialias for downsampling
+                )
+                mask_inputs_ = (mask_inputs >= 0.5).float()
+            else:
+                mask_inputs_ = mask_inputs_orig
+            
+            point_inputs_ = None
+
+        elif 'bbox' in region:
+            bbox = region['bbox']
+            box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+
+            points = torch.zeros(0, 2, dtype=torch.float32)
+            labels = torch.zeros(0, dtype=torch.int32)
+            if points.dim() == 2:
+                points = points.unsqueeze(0)  # add batch dimension
+            if labels.dim() == 1:
+                labels = labels.unsqueeze(0)  # add batch dimension
+                
+            box = torch.tensor(box, dtype=torch.float32, device=points.device)
+            box_coords = box.reshape(1, 2, 2)
+            box_labels = torch.tensor([2, 3], dtype=torch.int32, device=labels.device)
+            box_labels = box_labels.reshape(1, 2)
+            points = torch.cat([box_coords, points], dim=1)
+            labels = torch.cat([box_labels, labels], dim=1)
+            points = points / torch.tensor([image.width, image.height]).to(points.device)
+            
+            points = points * self.sam.image_size
+            points = points.to(feats[0].device)
+            labels = labels.to(feats[0].device)
+            
+            point_inputs_ = {"point_coords": points, "point_labels": labels}
+            mask_inputs_ = None
+
+        elif 'points' in region:
+            # Support for point prompts (positive/negative points)
+            point_coords = region['points']['coords']  # [[x1, y1], [x2, y2], ...]
+            point_labels = region['points']['labels']  # [1, 1, 0, ...] (1=positive, 0=negative)
+            
+            points = torch.tensor(point_coords, dtype=torch.float32)
+            labels = torch.tensor(point_labels, dtype=torch.int32)
+            
+            # Add batch dimension if needed
+            if points.dim() == 2:
+                points = points.unsqueeze(0)
+            if labels.dim() == 1:
+                labels = labels.unsqueeze(0)
+            
+            # Normalize to [0, image_size]
+            points = points / torch.tensor([image.width, image.height]).to(points.device)
+            points = points * self.sam.image_size
+            points = points.to(feats[0].device)
+            labels = labels.to(feats[0].device)
+            
+            point_inputs_ = {"point_coords": points, "point_labels": labels}
+            mask_inputs_ = None
+
+        else:
+            raise ValueError('Error: Input region should contain "mask", "bbox", or "points".')
+
+        # Run SAM prediction
+        output_dict_ = {'per_obj_dict': {}, 'maskmem_pos_enc': None}
+        current_out = self.sam.track_step(
+            frame_idx=self.frame_index,
+            is_init_cond_frame=True,
+            current_vision_feats=feats,
+            current_vision_pos_embeds=pos,
+            feat_sizes=feat_sizes,
+            point_inputs=point_inputs_,
+            mask_inputs=mask_inputs_,
+            output_dict=output_dict_,
+            num_frames=self.n_frames,
+            track_in_reverse=False,
+            run_mem_encoder=False,
+            prev_sam_mask_logits=None,
+        )
+        
+        pred_masks_gpu = current_out["pred_masks"]
+
+        # potentially fill holes in the predicted masks
+        if self.fill_hole_area > 0:
+            pred_masks_gpu = fill_holes_in_mask_scores(
+                pred_masks_gpu, self.fill_hole_area
+            )
+            
+        pred_masks = pred_masks_gpu.to(feats[0].device, non_blocking=True)
+
+        high_res_masks = torch.nn.functional.interpolate(
+            pred_masks,
+            size=(self.sam.image_size, self.sam.image_size),
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        # Encode memory
+        maskmem_features, maskmem_pos_enc = self.sam._encode_new_memory(
+            current_vision_feats=feats,
+            feat_sizes=feat_sizes,
+            pred_masks_high_res=high_res_masks,
+            object_score_logits=current_out['object_score_logits'],
+            is_mask_from_pts=True
+        )
+
+        maskmem_features = maskmem_features.to(torch.bfloat16)
+        maskmem_features = maskmem_features.to(feats[0].device, non_blocking=True)
+        
+        # Initialize maskmem_pos_enc if first object
+        if self.maskmem_pos_enc is None:
+            self.maskmem_pos_enc = [x[0:1].clone() for x in maskmem_pos_enc]
+            maskmem_pos_enc_ = self.maskmem_pos_enc[0].to(feats[0].device)
+            self.output_dict['maskmem_pos_enc'] = maskmem_pos_enc_
+
+        # Create object memory dictionary
+        per_obj_dict = {
+            "maskmem_features": maskmem_features,  # (1, 64, 64, 64)
+            "pred_masks": pred_masks,  # (1, 1, 256, 256)
+            "is_init": True, "frame_idx": self.frame_index, "is_drm": False
+        }
+
+        # Create object pointer dictionary
+        per_obj_obj_ptr_dict = {
+            "obj_ptr": current_out["obj_ptr"], 
+            "frame_idx": self.frame_index, 
+            "is_init": True
+        }
+        
+        # Get output mask for return
+        sz_ = (self.img_height, self.img_width)
+        mask_out = torch.nn.functional.interpolate(
+            pred_masks_gpu, size=sz_, mode="bilinear", align_corners=False
+        )
+        pred_mask_np = (mask_out[0, 0] > 0).float().cpu().numpy().astype(np.uint8)
+        
+        return per_obj_dict, per_obj_obj_ptr_dict, pred_mask_np
+    
     def initialize(self, image, init_regions):
         self.frame_index = 0
         
@@ -223,135 +391,80 @@ class DAM4SAMMOT():
         img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
         
         # compute features
-        feats, pos, feat_sizes = self._get_features(img)  # Note: removed number of objects
+        feats, pos, feat_sizes = self._get_features(img)
 
         self.object_sizes = []
         self.last_added = []
 
         # take all unmatched detections and put them in memory for future tracking
         for reg in init_regions:
-            # support both - bbox and mask initialization
-            if 'mask' in reg:
-                mask = reg['mask']
-                if not isinstance(mask, torch.Tensor):
-                    mask = torch.tensor(mask, dtype=torch.bool)
-                mask_H, mask_W = mask.shape
-                mask_inputs_orig = mask[None, None]  # add batch and channel dimension
-                mask_inputs_orig = mask_inputs_orig.float().to(feats[0].device)
-
-                # resize the mask if it doesn't match the model's image size
-                if mask_H != self.sam.image_size or mask_W != self.sam.image_size:
-                    mask_inputs = torch.nn.functional.interpolate(
-                        mask_inputs_orig,
-                        size=(self.sam.image_size, self.sam.image_size),
-                        align_corners=False,
-                        mode="bilinear",
-                        antialias=True,  # use antialias for downsampling
-                    )
-                    mask_inputs_ = (mask_inputs >= 0.5).float()
-                else:
-                    mask_inputs_ = mask_inputs_orig
-                
-                point_inputs_ = None
-
-                self.object_sizes.append([])
-                self.last_added.append(-1)
-            elif 'bbox' in reg:
-                bbox = reg['bbox']
-                box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
-
-                points = torch.zeros(0, 2, dtype=torch.float32)
-                labels = torch.zeros(0, dtype=torch.int32)
-                if points.dim() == 2:
-                    points = points.unsqueeze(0)  # add batch dimension
-                if labels.dim() == 1:
-                    labels = labels.unsqueeze(0)  # add batch dimension
-                    
-                box = torch.tensor(box, dtype=torch.float32, device=points.device)
-                box_coords = box.reshape(1, 2, 2)
-                box_labels = torch.tensor([2, 3], dtype=torch.int32, device=labels.device)
-                box_labels = box_labels.reshape(1, 2)
-                points = torch.cat([box_coords, points], dim=1)
-                labels = torch.cat([box_labels, labels], dim=1)
-                points = points / torch.tensor([image.width, image.height]).to(points.device)
-                
-                points = points * self.sam.image_size
-                points = points.to(feats[0].device)
-                labels = labels.to(feats[0].device)
-                
-                point_inputs_ = {"point_coords": points, "point_labels": labels}
-                mask_inputs_ = None
-
-                self.object_sizes.append([])
-                self.last_added.append(-1)
-            else:
-                print('Error: Input region should be mask or rectangle.')
-                exit(-1)
-
-            output_dict_ = {'per_obj_dict': {}, 'maskmem_pos_enc': None}
-            current_out = self.sam.track_step(
-                frame_idx=self.frame_index,
-                is_init_cond_frame=True,
-                current_vision_feats=feats,
-                current_vision_pos_embeds=pos,
-                feat_sizes=feat_sizes,
-                point_inputs=point_inputs_,
-                mask_inputs=mask_inputs_,
-                output_dict=output_dict_,
-                num_frames=self.n_frames,
-                track_in_reverse=False,
-                run_mem_encoder=False,  # We might need to put this on True since it is not run separately
-                prev_sam_mask_logits=None,
-            )          
-            pred_masks_gpu = current_out["pred_masks"]
-
-            # potentially fill holes in the predicted masks
-            if self.fill_hole_area > 0:
-                pred_masks_gpu = fill_holes_in_mask_scores(
-                    pred_masks_gpu, self.fill_hole_area
-                )
-                
-            pred_masks = pred_masks_gpu.to(img.device, non_blocking=True)
-
-            high_res_masks = torch.nn.functional.interpolate(
-                pred_masks,
-                size=(self.sam.image_size, self.sam.image_size),
-                mode="bilinear",
-                align_corners=False,
+            # Use helper method to process each object
+            per_obj_dict, per_obj_obj_ptr_dict, _ = self._process_single_object_init(
+                image, reg, feats, pos, feat_sizes
             )
-
-            maskmem_features, maskmem_pos_enc = self.sam._encode_new_memory(
-                current_vision_feats=feats,
-                feat_sizes=feat_sizes,
-                pred_masks_high_res=high_res_masks,
-                object_score_logits=current_out['object_score_logits'],
-                is_mask_from_pts=True
-            )
-
-            maskmem_features = maskmem_features.to(torch.bfloat16)
-            maskmem_features = maskmem_features.to(img.device, non_blocking=True)
             
-            if self.maskmem_pos_enc is None:
-                self.maskmem_pos_enc = [x[0:1].clone() for x in maskmem_pos_enc]
-                maskmem_pos_enc_ = self.maskmem_pos_enc[0].to(img.device)
-                self.output_dict['maskmem_pos_enc'] = maskmem_pos_enc_
-
-            per_obj_dict = {
-                "maskmem_features": maskmem_features,  # (1, 64, 64, 64)
-                "pred_masks": pred_masks,  # (1, 1, 256, 256)
-                "is_init": True, "frame_idx": self.frame_index, "is_drm": False
-            }
-
-            # obj_ptr dimmension: (1, 256)
-            per_obj_obj_ptr_dict = {"obj_ptr": current_out["obj_ptr"], "frame_idx": self.frame_index, "is_init": True}
-            
+            # Store object state
             self.per_object_outputs_all[self.next_obj_id] = [per_obj_dict]
             self.per_object_obj_ptr[self.next_obj_id] = [per_obj_obj_ptr_dict]
             self.add_to_drm_next[self.next_obj_id] = None
             self.all_obj_ids.append(self.next_obj_id)
+            
+            # Initialize tracking metadata for this object
+            self.object_sizes.append([])
+            self.last_added.append(-1)
+            
             self.next_obj_id += 1
         
         return None
+    
+    def add_object(self, image, region):
+        """
+        Add a new object during tracking (mid-sequence).
+        
+        Args:
+            image: PIL image (current frame)
+            region: dict with 'mask', 'bbox', or 'points'
+                - {'mask': np.array} - binary mask
+                - {'bbox': [x, y, w, h]} - bounding box
+                - {'points': {'coords': [[x,y], ...], 'labels': [1/0, ...]}} - points
+        
+        Returns:
+            obj_id: newly added object ID
+            mask: predicted mask (numpy array, uint8)
+        """
+        # Note: frame_index is NOT incremented (stays at current tracking frame)
+        # The object is initialized at the current frame
+        
+        if self.img_width is None or self.img_height is None:
+            self.img_width = image.width
+            self.img_height = image.height
+        
+        # prepare image
+        img = self._prepare_image(image)
+        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+        
+        # compute features
+        feats, pos, feat_sizes = self._get_features(img)
+        
+        # Use helper method to process the new object
+        per_obj_dict, per_obj_obj_ptr_dict, pred_mask_np = self._process_single_object_init(
+            image, region, feats, pos, feat_sizes
+        )
+        
+        # Store object state
+        new_obj_id = self.next_obj_id
+        self.per_object_outputs_all[new_obj_id] = [per_obj_dict]
+        self.per_object_obj_ptr[new_obj_id] = [per_obj_obj_ptr_dict]
+        self.add_to_drm_next[new_obj_id] = None
+        self.all_obj_ids.append(new_obj_id)
+        
+        # Initialize tracking metadata for this object
+        self.object_sizes.append([])
+        self.last_added.append(-1)
+        
+        self.next_obj_id += 1
+        
+        return new_obj_id, pred_mask_np
     
     def track(self, image):
         self.frame_index += 1
