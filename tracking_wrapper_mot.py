@@ -80,16 +80,16 @@ def keep_largest_component(mask):
 def load_confs(chkpt_path, model_size):
     if model_size == 'large':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_large.pt')
-        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_l.yaml"  # ✅ 수정
+        model_cfg = "sam2.1_hiera_l"  # ✅ .yaml 제거, 경로 제거
     elif model_size == 'base':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_base.pt')
-        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_b.yaml"  # ✅ 수정
+        model_cfg = "sam2.1_hiera_b"  # ✅ 파일명만
     elif model_size == 'small':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_small.pt')
-        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_s.yaml"  # ✅ 수정
+        model_cfg = "sam2.1_hiera_s"  # ✅ 파일명만
     elif model_size == 'tiny':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_tiny.pt')
-        model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_t.yaml"  # ✅ 수정
+        model_cfg = "sam2.1_hiera_t"  # ✅ 파일명만
     else:
         print('Error: Unknown model size:', model_size)
         exit(-1)
