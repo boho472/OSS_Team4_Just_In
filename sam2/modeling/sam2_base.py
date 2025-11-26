@@ -715,7 +715,9 @@ class SAM2Base(torch.nn.Module):
                         n_ram_elements += 1
 
                 for idx_ in range(len(output_dict['per_obj_dict'][obj_id])):
-                    per_obj_memory_.append(output_dict['per_obj_dict'][obj_id][idx_]['maskmem_features'])
+                    maskmem_feat = output_dict['per_obj_dict'][obj_id][idx_]['maskmem_features']
+                    per_obj_memory_.append(maskmem_feat.to(device, non_blocking=True))
+                    
                     if output_dict['per_obj_dict'][obj_id][idx_]['is_init'] or output_dict['per_obj_dict'][obj_id][idx_]['is_drm']:
                         maskmem_tpos_enc = self.maskmem_tpos_enc[-1]
                     else:
