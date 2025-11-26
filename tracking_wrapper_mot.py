@@ -157,6 +157,13 @@ class DAM4SAMMOT():
         self.max_drm = 3
         self.use_last = True  # always use last frame in RAM
         self.add_to_drm_next = {}  # needed for DRM update (to prevent adding twice the same frame to the memory)
+
+        # Object tracking metadata
+        # - object_sizes[i]: 객체 i의 크기 히스토리 (DRM 관리용)
+        # - last_added[i]: 객체 i가 마지막으로 DRM에 추가된 프레임
+        # - per_object_outputs_all[obj_id]: 객체 obj_id의 메모리 (RAM + DRM)
+        # - per_object_obj_ptr[obj_id]: 객체 obj_id의 object pointer 히스토리
+        # Note: initialize()와 add_new_objects()에서 동기화 필요
     
     def _prepare_image(self, image):
         # image is RGB PIL image: values on range [0, 255]
@@ -577,3 +584,176 @@ class DAM4SAMMOT():
                                     
         outputs = {'masks': m}
         return outputs
+    
+    def add_new_objects(self, frame_idx, image, regions):
+        """
+        Add multiple new objects to track starting from the specified frame.
+        
+        Args:
+            frame_idx: Current frame index where new objects appear
+            image: PIL Image of the current frame
+            regions: List of dicts with 'bbox' or 'mask' for each new object
+                    예: [{'bbox': [x, y, w, h]}, {'bbox': [x2, y2, w2, h2]}]
+        
+        Returns:
+            new_obj_ids: List of internal IDs assigned to new objects
+        """
+        if not regions or len(regions) == 0:
+            return []
+        
+        print(f"\n{'='*60}")
+        print(f"[Frame {frame_idx}] Adding {len(regions)} new object(s)...")
+        print(f"{'='*60}")
+        
+        # prepare image
+        img = self._prepare_image(image)
+        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+        
+        # compute features
+        feats, pos, feat_sizes = self._get_features(img, num_obj=1)
+        
+        new_obj_ids = []
+        
+        # Process each new object
+        for reg_idx, reg in enumerate(regions):
+            print(f"\nProcessing new object {reg_idx + 1}/{len(regions)}...")
+            
+            # Process bbox or mask input
+            if 'bbox' in reg:
+                bbox = reg['bbox']
+                box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+
+                points = torch.zeros(0, 2, dtype=torch.float32)
+                labels = torch.zeros(0, dtype=torch.int32)
+                if points.dim() == 2:
+                    points = points.unsqueeze(0)
+                if labels.dim() == 1:
+                    labels = labels.unsqueeze(0)
+                    
+                box = torch.tensor(box, dtype=torch.float32, device=points.device)
+                box_coords = box.reshape(1, 2, 2)
+                box_labels = torch.tensor([2, 3], dtype=torch.int32, device=labels.device)
+                box_labels = box_labels.reshape(1, 2)
+                points = torch.cat([box_coords, points], dim=1)
+                labels = torch.cat([box_labels, labels], dim=1)
+                points = points / torch.tensor([image.width, image.height]).to(points.device)
+                
+                points = points * self.sam.image_size
+                points = points.to(feats[0].device)
+                labels = labels.to(feats[0].device)
+                
+                point_inputs_ = {"point_coords": points, "point_labels": labels}
+                mask_inputs_ = None
+                
+            elif 'mask' in reg:
+                mask = reg['mask']
+                if not isinstance(mask, torch.Tensor):
+                    mask = torch.tensor(mask, dtype=torch.bool)
+                mask_H, mask_W = mask.shape
+                mask_inputs_orig = mask[None, None]
+                mask_inputs_orig = mask_inputs_orig.float().to(feats[0].device)
+
+                if mask_H != self.sam.image_size or mask_W != self.sam.image_size:
+                    mask_inputs = torch.nn.functional.interpolate(
+                        mask_inputs_orig,
+                        size=(self.sam.image_size, self.sam.image_size),
+                        align_corners=False,
+                        mode="bilinear",
+                        antialias=True,
+                    )
+                    mask_inputs_ = (mask_inputs >= 0.5).float()
+                else:
+                    mask_inputs_ = mask_inputs_orig
+                
+                point_inputs_ = None
+            else:
+                raise ValueError('Error: region must contain "bbox" or "mask".')
+
+            # Run SAM to initialize this new object
+            output_dict_ = {'per_obj_dict': {}, 'maskmem_pos_enc': None}
+            current_out = self.sam.track_step(
+                frame_idx=frame_idx,
+                is_init_cond_frame=True,
+                current_vision_feats=feats,
+                current_vision_pos_embeds=pos,
+                feat_sizes=feat_sizes,
+                point_inputs=point_inputs_,
+                mask_inputs=mask_inputs_,
+                output_dict=output_dict_,
+                num_frames=self.n_frames,
+                track_in_reverse=False,
+                run_mem_encoder=False,
+                prev_sam_mask_logits=None,
+            )
+            
+            pred_masks_gpu = current_out["pred_masks"]
+
+            if self.fill_hole_area > 0:
+                pred_masks_gpu = fill_holes_in_mask_scores(
+                    pred_masks_gpu, self.fill_hole_area
+                )
+                
+            pred_masks = pred_masks_gpu.to(img.device, non_blocking=True)
+
+            high_res_masks = torch.nn.functional.interpolate(
+                pred_masks,
+                size=(self.sam.image_size, self.sam.image_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+            # Encode memory for this new object
+            maskmem_features, maskmem_pos_enc = self.sam._encode_new_memory(
+                current_vision_feats=feats,
+                feat_sizes=feat_sizes,
+                pred_masks_high_res=high_res_masks,
+                object_score_logits=current_out['object_score_logits'],
+                is_mask_from_pts=True
+            )
+
+            maskmem_features = maskmem_features.to(torch.bfloat16)
+            maskmem_features = maskmem_features.to(img.device, non_blocking=True)
+            
+            if self.maskmem_pos_enc is None:
+                self.maskmem_pos_enc = [x[0:1].clone() for x in maskmem_pos_enc]
+                maskmem_pos_enc_ = self.maskmem_pos_enc[0].to(img.device)
+                self.output_dict['maskmem_pos_enc'] = maskmem_pos_enc_
+
+            # Create memory dict for this new object
+            per_obj_dict = {
+                "maskmem_features": maskmem_features,
+                "pred_masks": pred_masks,
+                "is_init": True,
+                "frame_idx": frame_idx,
+                "is_drm": False
+            }
+
+            per_obj_obj_ptr_dict = {
+                "obj_ptr": current_out["obj_ptr"],
+                "frame_idx": frame_idx,
+                "is_init": True
+            }
+            
+            # Assign new internal ID
+            new_obj_id = self.next_obj_id
+            
+            # Add to tracking structures
+            self.per_object_outputs_all[new_obj_id] = [per_obj_dict]
+            self.per_object_obj_ptr[new_obj_id] = [per_obj_obj_ptr_dict]
+            self.add_to_drm_next[new_obj_id] = None
+            self.all_obj_ids.append(new_obj_id)
+            
+            # Initialize tracking metadata
+            self.object_sizes.append([])
+            self.last_added.append(-1)
+            
+            self.next_obj_id += 1
+            new_obj_ids.append(new_obj_id)
+            
+            print(f"  ✓ Object ID {new_obj_id} initialized with bbox {reg.get('bbox', 'mask')}")
+        
+        print(f"\n[Frame {frame_idx}] Successfully added {len(new_obj_ids)} object(s)")
+        print(f"Total tracking objects: {len(self.all_obj_ids)} (IDs: {self.all_obj_ids})")
+        print(f"{'='*60}\n")
+        
+        return new_obj_ids
