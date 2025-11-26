@@ -9,6 +9,36 @@ from IPython.display import display, clear_output
 from tracking_wrapper_mot import DAM4SAMMOT
 
 
+def clear_memory():
+    """Aggressively clear GPU memory"""
+    gc.collect()
+    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def find_frame_path(video_dir, frame_idx):
+    """Find frame path with multiple naming conventions"""
+    patterns = [
+        f"frame_{frame_idx:04d}.jpg",
+        f"frame_{frame_idx:04d}.png",
+        f"{frame_idx:08d}.jpg",
+        f"{frame_idx:08d}.png",
+        f"{frame_idx}.jpg",
+        f"{frame_idx}.png",
+    ]
+    
+    for pattern in patterns:
+        frame_path = os.path.join(video_dir, pattern)
+        if os.path.exists(frame_path):
+            return frame_path
+    
+    raise FileNotFoundError(
+        f"Frame {frame_idx} not found in {video_dir}\n"
+        f"Tried: {', '.join(patterns)}"
+    )
+
+
 def show_image_with_grid(image_path, grid_size=50):
     """
     Display image with grid overlay for bbox coordinate reference.
@@ -166,7 +196,7 @@ def get_bboxes_manual_input(frame_path, num_objects, grid_size=50):
     return bboxes
 
 
-def test_add_objects_colab(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
+def test_add_objects(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
     """
     Test adding objects in Google Colab with grid-based bbox selection.
     
@@ -365,4 +395,4 @@ if __name__ == "__main__":
         print("="*60)
     else:
         video_dir = sys.argv[1]
-        test_add_objects_colab(video_dir)
+        test_add_objects(video_dir)
