@@ -125,21 +125,24 @@ def show_image_with_bboxes(image_path, bboxes, labels=None):
     plt.show()
 
 
-def get_bboxes_from_input(num_objects, image_width, image_height):
+def get_bboxes_manual_input(frame_path, num_objects, grid_size=50):
     """
-    Get bboxes from user input (call in separate cell after viewing grid).
+    Get bounding boxes through manual input with grid reference.
     
     Args:
-        num_objects: Number of objects to input
-        image_width: Image width (for validation)
-        image_height: Image height (for validation)
+        frame_path: Path to the frame image
+        num_objects: Number of objects to annotate
+        grid_size: Grid size for reference
     
     Returns:
         List of bboxes in [x, y, width, height] format
     """
     print(f"\n{'='*80}")
-    print(f"BBox Input ({num_objects} object(s))")
+    print(f"Manual BBox Input: {os.path.basename(frame_path)}")
     print(f"{'='*80}\n")
+    
+    # Show grid
+    width, height = show_image_with_grid(frame_path, grid_size)
     
     bboxes = []
     
@@ -164,8 +167,8 @@ def get_bboxes_from_input(num_objects, image_width, image_height):
                     print("❌ Error: Invalid bbox values (must be positive)")
                     continue
                 
-                if x + w > image_width or y + h > image_height:
-                    print(f"⚠️  Warning: BBox exceeds image bounds ({image_width}x{image_height})")
+                if x + w > width or y + h > height:
+                    print(f"⚠️  Warning: BBox exceeds image bounds ({width}x{height})")
                     confirm = input("Continue anyway? (y/n): ").strip().lower()
                     if confirm != 'y':
                         continue
@@ -180,30 +183,21 @@ def get_bboxes_from_input(num_objects, image_width, image_height):
                 print("\n\n⚠️  Input cancelled")
                 return None
     
-    return bboxes
-
-
-def verify_bboxes(image_path, bboxes):
-    """
-    Verify bboxes by showing them on the image.
-    
-    Args:
-        image_path: Path to the image
-        bboxes: List of bboxes to visualize
-    
-    Returns:
-        True if user confirms, False otherwise
-    """
+    # Verify
     print(f"\n{'='*80}")
     print("Verification: Showing bboxes on image...")
     print(f"{'='*80}\n")
     
-    show_image_with_bboxes(image_path, bboxes, 
+    show_image_with_bboxes(frame_path, bboxes, 
                           labels=[f"Obj {i+1}" for i in range(len(bboxes))])
     
     confirm = input("\n✓ Are these bboxes correct? (y/n): ").strip().lower()
     
-    return confirm == 'y'
+    if confirm != 'y':
+        print("Restarting bbox input...")
+        return get_bboxes_manual_input(frame_path, num_objects, grid_size)
+    
+    return bboxes
 
 
 def test_add_objects(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
