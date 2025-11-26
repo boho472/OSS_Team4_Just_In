@@ -345,7 +345,7 @@ class DAM4SAMMOT():
             )
 
             maskmem_features = maskmem_features.to(torch.bfloat16)
-            maskmem_features = maskmem_features.to(img.device, non_blocking=True)
+            maskmem_features = maskmem_features.to(self.storage_device, non_blocking=True)
             
             if self.maskmem_pos_enc is None:
                 self.maskmem_pos_enc = [x[0:1].clone() for x in maskmem_pos_enc]
@@ -451,11 +451,18 @@ class DAM4SAMMOT():
         n_pixels_pos = [m_single.sum() for m_single in m]
         
         maskmem_features = current_out["maskmem_features"].to(torch.bfloat16)
+        maskmem_features = maskmem_features.to(self.storage_device, non_blocking=True)
         
         alternative_masks_all = torch.nn.functional.interpolate(current_out["multimasks_logits"], size=sz_, mode="bilinear", align_corners=False)
         alternative_masks_all = (alternative_masks_all > 0).detach().cpu().numpy().astype(np.uint8)
         all_ious = current_out["ious"].detach().cpu().numpy()
         
+        # ✅ 추가: pred_masks_gpu를 CPU로 이동 (numpy 변환 전에)
+        pred_masks_cpu = pred_masks_gpu.detach().cpu()
+    
+        # ✅ 추가: obj_ptr를 CPU로 이동
+        obj_ptrs_cpu = current_out["obj_ptr"].detach().cpu()
+
         for obj_idx, obj_id in enumerate(self.all_obj_ids):
 
             # check if DRM has to be updated from the element from previous frame
@@ -474,8 +481,11 @@ class DAM4SAMMOT():
                 obj_mem = self.per_object_outputs_all[obj_id]
 
                 # Update object pointers firs
-                per_obj_obj_ptr_dict = {"obj_ptr": current_out["obj_ptr"][obj_idx].unsqueeze(0), 
-                                        "frame_idx": self.frame_index, "is_init": False}
+                per_obj_obj_ptr_dict = {
+                "obj_ptr": obj_ptrs_cpu[obj_idx].unsqueeze(0), 
+                "frame_idx": self.frame_index, 
+                "is_init": False
+                }
                 obj_mem_obj_ptr = self.per_object_obj_ptr[obj_id]
                 obj_mem_obj_ptr.append(per_obj_obj_ptr_dict)
                 if len(obj_mem_obj_ptr) > self.sam.max_obj_ptrs_in_encoder:
@@ -491,9 +501,11 @@ class DAM4SAMMOT():
                 # Here the per-object update is performed
                 # create object dict and append it to list
                 per_obj_dict = {
-                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # (1, 64, 64, 64)
-                    "pred_masks": pred_masks_gpu[obj_idx].unsqueeze(0).detach().cpu().numpy(),  # (1, 1, 256, 256)
-                    "is_init": False, "frame_idx": self.frame_index, "is_drm": False
+                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),
+                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # 이미 CPU에 있음
+                    "is_init": False, 
+                    "frame_idx": self.frame_index, 
+                    "is_drm": False
                 }
 
                 if self.use_last:
@@ -568,10 +580,13 @@ class DAM4SAMMOT():
                                 self.last_added[obj_idx] = self.frame_index # Update the last added frame index
                                 
                                 # add element to DRM
-                                per_obj_dict = {
-                                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # (1, 64, 64, 64)
-                                    "pred_masks": pred_masks_gpu[obj_idx].unsqueeze(0).detach().cpu().numpy(),  # (1, 1, 256, 256)
-                                    "is_init": False, "frame_idx": self.frame_index, "is_drm": True
+                                # ✅ 수정: DRM에도 CPU 버전 사용
+                                per_obj_dict_drm = {
+                                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),
+                                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),
+                                    "is_init": False, 
+                                    "frame_idx": self.frame_index, 
+                                    "is_drm": True
                                 }
                                 
                                 if self.frame_index == obj_mem[-1]['frame_idx']:
@@ -593,7 +608,11 @@ class DAM4SAMMOT():
                                             # remove from RAM elsewhere
                                             ram_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and not mem_el['is_drm'])]
                                             obj_mem.pop(ram_idxs[0])
-                                    
+
+        # ✅ 추가: GPU 텐서 명시적으로 삭제
+        del pred_masks_gpu, masks_out, current_out, feats, pos
+        torch.cuda.empty_cache()
+
         outputs = {'masks': m}
         return outputs
     
@@ -733,7 +752,7 @@ class DAM4SAMMOT():
             )
 
             maskmem_features = maskmem_features.to(torch.bfloat16)
-            maskmem_features = maskmem_features.to(img.device, non_blocking=True)
+            maskmem_features = maskmem_features.to(self.storage_device, non_blocking=True)
             
             if self.maskmem_pos_enc is None:
                 self.maskmem_pos_enc = [x[0:1].clone() for x in maskmem_pos_enc]
