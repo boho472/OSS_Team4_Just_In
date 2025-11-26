@@ -372,6 +372,9 @@ class DAM4SAMMOT():
     def track(self, image):
         self.frame_index += 1
 
+        # ✅ 추가: 메모리 정리
+        torch.cuda.empty_cache()
+
         # prepare image
         img = self._prepare_image(image)
         img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
