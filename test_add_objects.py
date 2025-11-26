@@ -410,3 +410,83 @@ if __name__ == "__main__":
     else:
         video_dir = sys.argv[1]
         test_add_objects(video_dir)
+        
+def get_bboxes_from_input(num_objects, image_width, image_height):
+    """
+    Get bboxes from user input (call in separate cell after viewing grid).
+    
+    Args:
+        num_objects: Number of objects to input
+        image_width: Image width (for validation)
+        image_height: Image height (for validation)
+    
+    Returns:
+        List of bboxes in [x, y, width, height] format
+    """
+    print(f"\n{'='*80}")
+    print(f"BBox Input ({num_objects} object(s))")
+    print(f"{'='*80}\n")
+    
+    bboxes = []
+    
+    for i in range(num_objects):
+        print(f"\n--- Object {i+1}/{num_objects} ---")
+        
+        while True:
+            try:
+                bbox_str = input(f"Enter bbox (format: x,y,w,h): ").strip()
+                
+                # Parse input
+                parts = [int(p.strip()) for p in bbox_str.split(',')]
+                
+                if len(parts) != 4:
+                    print("❌ Error: Please enter exactly 4 values (x,y,w,h)")
+                    continue
+                
+                x, y, w, h = parts
+                
+                # Validate
+                if x < 0 or y < 0 or w <= 0 or h <= 0:
+                    print("❌ Error: Invalid bbox values (must be positive)")
+                    continue
+                
+                if x + w > image_width or y + h > image_height:
+                    print(f"⚠️  Warning: BBox exceeds image bounds ({image_width}x{image_height})")
+                    confirm = input("Continue anyway? (y/n): ").strip().lower()
+                    if confirm != 'y':
+                        continue
+                
+                bboxes.append([x, y, w, h])
+                print(f"✓ BBox {i+1} added: {[x, y, w, h]}")
+                break
+                
+            except ValueError:
+                print("❌ Error: Invalid format. Use: x,y,w,h (e.g., 100,150,200,300)")
+            except KeyboardInterrupt:
+                print("\n\n⚠️  Input cancelled")
+                return None
+    
+    return bboxes
+
+
+def verify_bboxes(image_path, bboxes):
+    """
+    Verify bboxes by showing them on the image.
+    
+    Args:
+        image_path: Path to the image
+        bboxes: List of bboxes to visualize
+    
+    Returns:
+        True if user confirms, False otherwise
+    """
+    print(f"\n{'='*80}")
+    print("Verification: Showing bboxes on image...")
+    print(f"{'='*80}\n")
+    
+    show_image_with_bboxes(image_path, bboxes, 
+                          labels=[f"Obj {i+1}" for i in range(len(bboxes))])
+    
+    confirm = input("\n✓ Are these bboxes correct? (y/n): ").strip().lower()
+    
+    return confirm == 'y'
