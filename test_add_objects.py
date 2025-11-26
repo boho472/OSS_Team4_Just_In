@@ -22,8 +22,10 @@ def find_frame_path(video_dir, frame_idx):
     patterns = [
         f"frame_{frame_idx:04d}.jpg",
         f"frame_{frame_idx:04d}.png",
-        f"{frame_idx:08d}.jpg",
+        f"{frame_idx:08d}.jpg",      # 8자리
         f"{frame_idx:08d}.png",
+        f"{frame_idx:06d}.jpg",      # ✅ 6자리 추가!
+        f"{frame_idx:06d}.png",      # ✅ 6자리 추가!
         f"{frame_idx}.jpg",
         f"{frame_idx}.png",
     ]
