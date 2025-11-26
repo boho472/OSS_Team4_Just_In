@@ -372,31 +372,23 @@ class DAM4SAMMOT():
     def track(self, image):
         self.frame_index += 1
 
-        # ✅ 추가: 메모리 정리
-        torch.cuda.empty_cache()
-
         # prepare image
         img = self._prepare_image(image)
         img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
         
         # compute features
-        feats, pos, feat_sizes = self._get_features(img)  # Note: removed number of objects
+        feats, pos, feat_sizes = self._get_features(img)
         
         output_dict_ = {
             'per_obj_dict': self.per_object_outputs_all,
             'per_obj_obj_ptr_dict': self.per_object_obj_ptr,
             'maskmem_pos_enc': self.output_dict['maskmem_pos_enc'], 
             'obj_ids_list': self.all_obj_ids
-            }
+        }
 
-        # n_runs tells how many times we need to call the track function
-        # this is useful especially in MOT setup, where few hundreds of objects 
-        # is tracked at the same time
-        # in VOT the number of objects is much lower (up to 10)
-        # which means that n_runs is always 1
         n_runs = ((len(output_dict_['obj_ids_list']) - 1) // self.max_batch_sz) + 1
 
-        current_out = None  # output structure to collect (concatenate) outputs from multiple runs
+        current_out = None
         for i in range(n_runs):
             start_obj_idx = i * self.max_batch_sz
             end_obj_idx = min(len(output_dict_['obj_ids_list']), 
@@ -409,9 +401,9 @@ class DAM4SAMMOT():
                 per_obj_dict_[id_] = output_dict_['per_obj_dict'][id_]
                 per_obj_obj_ptr_dict_[id_] = output_dict_['per_obj_obj_ptr_dict'][id_]
             output_dict_tmp = {'per_obj_dict': per_obj_dict_, 
-                               'per_obj_obj_ptr_dict': per_obj_obj_ptr_dict_,
-                               'maskmem_pos_enc': output_dict_['maskmem_pos_enc'], 
-                               'obj_ids_list': obj_ids_list_}
+                            'per_obj_obj_ptr_dict': per_obj_obj_ptr_dict_,
+                            'maskmem_pos_enc': output_dict_['maskmem_pos_enc'], 
+                            'obj_ids_list': obj_ids_list_}
             
             current_out_tmp = self.sam.track_step(
                 frame_idx=self.frame_index,
@@ -429,7 +421,6 @@ class DAM4SAMMOT():
             )
             current_out_tmp['maskmem_pos_enc'] = None
 
-            # this if is here only to support multi-run setup (when huge number of objects is tracked)
             if current_out is None:
                 current_out = current_out_tmp
             else:
@@ -438,8 +429,7 @@ class DAM4SAMMOT():
                 current_out['object_score_logits'] = torch.cat([current_out['object_score_logits'], current_out_tmp['object_score_logits']], 0)
                 current_out['maskmem_features'] = torch.cat([current_out['maskmem_features'], current_out_tmp['maskmem_features']], 0)
             
-        pred_masks_gpu = current_out["pred_masks"]  # [N_obj, 1, 256, 256]
-        # potentially fill holes in the predicted masks
+        pred_masks_gpu = current_out["pred_masks"]
         if self.fill_hole_area > 0:
             pred_masks_gpu = fill_holes_in_mask_scores(
                 pred_masks_gpu, self.fill_hole_area
@@ -450,6 +440,7 @@ class DAM4SAMMOT():
         m = [(m_[0] > 0).float().cpu().numpy().astype(np.uint8) for m_ in masks_out]
         n_pixels_pos = [m_single.sum() for m_single in m]
         
+        # ✅ maskmem_features를 CPU로 이동
         maskmem_features = current_out["maskmem_features"].to(torch.bfloat16)
         maskmem_features = maskmem_features.to(self.storage_device, non_blocking=True)
         
@@ -457,39 +448,34 @@ class DAM4SAMMOT():
         alternative_masks_all = (alternative_masks_all > 0).detach().cpu().numpy().astype(np.uint8)
         all_ious = current_out["ious"].detach().cpu().numpy()
         
-        # ✅ 추가: pred_masks_gpu를 CPU로 이동 (numpy 변환 전에)
+        # ✅ pred_masks를 CPU로 복사 (저장용)
         pred_masks_cpu = pred_masks_gpu.detach().cpu()
-    
-        # ✅ 추가: obj_ptr를 CPU로 이동
-        obj_ptrs_cpu = current_out["obj_ptr"].detach().cpu()
+        
+        # ❌ 이 줄 삭제! obj_ptr는 GPU에 유지
+        # obj_ptrs_cpu = current_out["obj_ptr"].detach().cpu()
 
         for obj_idx, obj_id in enumerate(self.all_obj_ids):
 
-            # check if DRM has to be updated from the element from previous frame
             if self.add_to_drm_next[obj_id]:
                 obj_mem = self.per_object_outputs_all[obj_id]
                 obj_mem[-1] = self.add_to_drm_next[obj_id]
                 self.add_to_drm_next[obj_id] = None
                 drm_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and mem_el['is_drm'])]
                 if len(drm_idxs) > self.max_drm:
-                    # remove from DRM if more than max DRM elements
                     obj_mem.pop(drm_idxs[0])
 
-            # update only if object is visible
             if n_pixels_pos[obj_idx] > 0:
-                # list with all memory elements for this object
                 obj_mem = self.per_object_outputs_all[obj_id]
 
-                # Update object pointers firs
+                # ✅ obj_ptr는 GPU 버전 그대로 사용
                 per_obj_obj_ptr_dict = {
-                "obj_ptr": obj_ptrs_cpu[obj_idx].unsqueeze(0), 
-                "frame_idx": self.frame_index, 
-                "is_init": False
+                    "obj_ptr": current_out["obj_ptr"][obj_idx].unsqueeze(0),  # GPU에 유지
+                    "frame_idx": self.frame_index, 
+                    "is_init": False
                 }
                 obj_mem_obj_ptr = self.per_object_obj_ptr[obj_id]
                 obj_mem_obj_ptr.append(per_obj_obj_ptr_dict)
                 if len(obj_mem_obj_ptr) > self.sam.max_obj_ptrs_in_encoder:
-                    # get first non-init frame and remove it from the list
                     rem_idx = None
                     for i, ptr_el in enumerate(obj_mem_obj_ptr):
                         if not ptr_el["is_init"]:
@@ -498,11 +484,10 @@ class DAM4SAMMOT():
                     if rem_idx:
                         obj_mem_obj_ptr.pop(rem_idx)
 
-                # Here the per-object update is performed
-                # create object dict and append it to list
+                # ✅ maskmem_features와 pred_masks는 CPU 버전 사용
                 per_obj_dict = {
-                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),
-                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # 이미 CPU에 있음
+                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # CPU
+                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # CPU
                     "is_init": False, 
                     "frame_idx": self.frame_index, 
                     "is_drm": False
@@ -527,21 +512,15 @@ class DAM4SAMMOT():
                     if (self.frame_index % self.update_delta) == 0:
                         obj_mem.append(per_obj_dict)
                 
-                # check if memory is full for this object
-                # remove the oldest non-init RAM element
                 ram_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and not mem_el['is_drm'])]
                 if len(ram_idxs) > self.max_ram and len(obj_mem) > self.sam.num_maskmem:
                     obj_mem.pop(ram_idxs[0])
                 
-                # update the DRM memory - but first, check if DRM is even in use
                 if self.max_drm > 0:
-                    # check for update the DRM part of the memory
-                    m_idx = np.argmax(all_ious[obj_idx]) # Index of the chosen predicted mask
-                    m_iou = all_ious[obj_idx][m_idx] # Predicted IoU of the chosen predicted mask
-                    # Delete the chosen predicted mask from the list of all predicted masks, leading to only alternative masks
+                    m_idx = np.argmax(all_ious[obj_idx])
+                    m_iou = all_ious[obj_idx][m_idx]
                     alternative_masks = [mask for i, mask in enumerate(alternative_masks_all[obj_idx]) if i != m_idx]
 
-                    # Determine if the object ratio between the current frame and the previous frames is within a certain range
                     self.object_sizes[obj_idx].append(n_pixels_pos[obj_idx])
                     if len(self.object_sizes[obj_idx]) > 1:
                         obj_sizes_ratio = n_pixels_pos[obj_idx] / np.median([
@@ -550,67 +529,46 @@ class DAM4SAMMOT():
                     else:
                         obj_sizes_ratio = -1
 
-                    # The first condition checks if:
-                    #  - the chosen predicted mask has a high predicted IoU, 
-                    #  - the object size ratio is within a +- 20% range compared to the previous frames, 
-                    #  - the target is present in the current frame,
-                    #  - the last added frame to DRM is more than 5 frames ago or no frame has been added yet
                     if m_iou > 0.8 and obj_sizes_ratio >= 0.8 and obj_sizes_ratio <= 1.2 and \
                         (self.frame_index - self.last_added[obj_idx] > self.update_delta or self.last_added[obj_idx] == -1):
                         
-                        # Numpy array of the chosen mask and corresponding bounding box
                         chosen_mask_np = m[obj_idx]
                         chosen_bbox = self._npmask2box(m[obj_idx])
 
-                        # Delete the parts of the alternative masks that overlap with the chosen mask
                         alternative_masks = [np.logical_and(m_, np.logical_not(chosen_mask_np)).astype(np.uint8) for m_ in alternative_masks]
-                        # Keep only the largest connected component of the processed alternative masks
                         alternative_masks = [keep_largest_component(m_) for m_ in alternative_masks if np.sum(m_) >= 1]
                         if len(alternative_masks) > 0:
-                            # Make the union of the chosen mask and the processed alternative masks (corresponding to the largest connected component)
                             alternative_masks = [np.logical_or(m_, chosen_mask_np).astype(np.uint8) for m_ in alternative_masks]
-                            # Convert the processed alternative masks to bounding boxes to calculate the IoUs bounding box-wise
                             alternative_bboxes = [self._npmask2box(m_) for m_ in alternative_masks]
-                            # Calculate the IoUs between the chosen bounding box and the processed alternative bounding boxes
                             ious = [calculate_overlaps([Rectangle(*chosen_bbox)], [Rectangle(*bbox)])[0] for bbox in alternative_bboxes]
-                            # The second condition checks if within the calculated IoUs, there is at least one IoU that is less than 0.7
-                            # That would mean that there are significant differences between the chosen mask and the processed alternative masks, 
-                            # leading to possible detections of distractors within alternative masks.
                             if np.min(np.array(ious)) <= 0.7:
-                                self.last_added[obj_idx] = self.frame_index # Update the last added frame index
+                                self.last_added[obj_idx] = self.frame_index
                                 
-                                # add element to DRM
-                                # ✅ 수정: DRM에도 CPU 버전 사용
+                                # ✅ DRM에도 CPU 버전 사용
                                 per_obj_dict_drm = {
-                                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),
-                                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),
+                                    "maskmem_features": maskmem_features[obj_idx].unsqueeze(0),  # CPU
+                                    "pred_masks": pred_masks_cpu[obj_idx].unsqueeze(0).numpy(),  # CPU
                                     "is_init": False, 
                                     "frame_idx": self.frame_index, 
                                     "is_drm": True
                                 }
                                 
                                 if self.frame_index == obj_mem[-1]['frame_idx']:
-                                    # this frame is already in RAM; 
-                                    # put into the temporary mem structure and add to DRM in the next frame
-                                    self.add_to_drm_next[obj_id] = per_obj_dict
+                                    self.add_to_drm_next[obj_id] = per_obj_dict_drm
                                 else:
-                                    # this frame is not in RAM yet - add directly to DRM
-                                    obj_mem.append(per_obj_dict)
+                                    obj_mem.append(per_obj_dict_drm)
                                     
-                                    # check if memory is full for this object
-                                    # remove the oldest non-init DRM element
                                     if len(obj_mem) > self.sam.num_maskmem:
                                         drm_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and mem_el['is_drm'])]
                                         if len(drm_idxs) > self.max_drm:
-                                            # remove from DRM if more than max DRM elements
                                             obj_mem.pop(drm_idxs[0])
                                         else:
-                                            # remove from RAM elsewhere
                                             ram_idxs = [mem_idx for mem_idx, mem_el in enumerate(obj_mem) if (not mem_el['is_init'] and not mem_el['is_drm'])]
                                             obj_mem.pop(ram_idxs[0])
 
-        # ✅ 추가: GPU 텐서 명시적으로 삭제
-        del pred_masks_gpu, masks_out, current_out, feats, pos
+        # ✅ GPU 텐서 정리 (큰 것들만)
+        del pred_masks_gpu, masks_out, feats, pos
+        # current_out["obj_ptr"]는 작아서 유지해도 됨 (다음 프레임에서 사용)
         torch.cuda.empty_cache()
 
         outputs = {'masks': m}
