@@ -226,16 +226,26 @@ def test_add_objects(video_dir, checkpoint_dir='./checkpoints', grid_size=50):
     frame_paths = []
     
     for i in range(20):
-        frame_path = os.path.join(video_dir, f"frame_{i:04d}.jpg")
-        if not os.path.exists(frame_path):
-            frame_path = os.path.join(video_dir, f"{i:08d}.jpg")
-        if not os.path.exists(frame_path):
-            # Try .png
-            frame_path = os.path.join(video_dir, f"frame_{i:04d}.png")
-        if not os.path.exists(frame_path):
-            frame_path = os.path.join(video_dir, f"{i:08d}.png")
+        # ✅ 6자리 패턴 추가
+        patterns = [
+            f"frame_{i:04d}.jpg",
+            f"frame_{i:04d}.png",
+            f"{i:08d}.jpg",
+            f"{i:08d}.png",
+            f"{i:06d}.jpg",  # ✅ 추가!
+            f"{i:06d}.png",  # ✅ 추가!
+            f"{i}.jpg",
+            f"{i}.png",
+        ]
         
-        if not os.path.exists(frame_path):
+        frame_path = None
+        for pattern in patterns:
+            test_path = os.path.join(video_dir, pattern)
+            if os.path.exists(test_path):
+                frame_path = test_path
+                break
+        
+        if frame_path is None:
             raise FileNotFoundError(f"Frame {i} not found in {video_dir}")
         
         frames.append(Image.open(frame_path).convert("RGB"))
