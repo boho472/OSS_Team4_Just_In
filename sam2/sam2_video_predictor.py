@@ -981,34 +981,35 @@ class SAM2VideoPredictorVOS(SAM2VideoPredictor):
         self._compile_all_components()
 
     def _compile_all_components(self):
-        print("Compiling all components for VOS setting. First time may be very slow.")
-        self.memory_encoder.forward = torch.compile(
-            self.memory_encoder.forward,
-            mode="max-autotune",
-            fullgraph=True,
-            dynamic=False,
-        )
+        # print("Compiling all components for VOS setting. First time may be very slow.")
+        # self.memory_encoder.forward = torch.compile(
+        #     self.memory_encoder.forward,
+        #     mode="max-autotune",
+        #     fullgraph=True,
+        #     dynamic=False,
+        # )
 
-        self.memory_attention.forward = torch.compile(
-            self.memory_attention.forward,
-            mode="max-autotune",
-            fullgraph=True,
-            dynamic=True,  # Num. of memories varies
-        )
+        # self.memory_attention.forward = torch.compile(
+        #     self.memory_attention.forward,
+        #     mode="max-autotune",
+        #     fullgraph=True,
+        #     dynamic=True,  # Num. of memories varies
+        # )
 
-        self.sam_prompt_encoder.forward = torch.compile(
-            self.sam_prompt_encoder.forward,
-            mode="max-autotune",
-            fullgraph=True,
-            dynamic=False,  # Accuracy regression on True
-        )
+        # self.sam_prompt_encoder.forward = torch.compile(
+        #     self.sam_prompt_encoder.forward,
+        #     mode="max-autotune",
+        #     fullgraph=True,
+        #     dynamic=False,  # Accuracy regression on True
+        # )
 
-        self.sam_mask_decoder.forward = torch.compile(
-            self.sam_mask_decoder.forward,
-            mode="max-autotune",
-            fullgraph=True,
-            dynamic=False,  # Accuracy regression on True
-        )
+        # self.sam_mask_decoder.forward = torch.compile(
+        #     self.sam_mask_decoder.forward,
+        #     mode="max-autotune",
+        #     fullgraph=True,
+        #     dynamic=False,  # Accuracy regression on True
+        # )
+        pass
 
     def forward_image(self, img_batch: torch.Tensor):
         """

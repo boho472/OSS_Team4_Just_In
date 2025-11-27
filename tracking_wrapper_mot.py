@@ -149,8 +149,13 @@ class DAM4SAMMOT():
         # MOT-specific fields
         self.per_object_outputs_all = {}
         self.per_object_obj_ptr = {}  # separate object pointers since they are updated differently
-        self.next_obj_id = 1
+        self.next_obj_id = 0
+        self.frame_index = 0
         self.all_obj_ids = []
+        
+        # Feature cache to avoid duplicate computation
+        self._cached_features = None
+        self._cached_frame_hash = None
         self.max_batch_sz = 200  # how many objects will be processed together (should not impact tracking)
         self.update_delta = 5  # update every delta frames
         self.max_ram = 3
@@ -170,27 +175,50 @@ class DAM4SAMMOT():
         return img.cuda()
     
     def _get_features(self, image, num_obj=1):
-        # compute backbone features
-        backbone_out = self.sam.forward_image(image)
-        # vision_features = backbone_out['vision_features']  # (1, 256, 64, 64)
-        vision_pos_enc = backbone_out['vision_pos_enc']  # list: [(1, 256, 256, 256), (1, 256, 128, 128), (1, 256, 64, 64)]
-        backbone_fpn = backbone_out['backbone_fpn']  # list: [(1, 32, 256, 256), (1, 64, 128, 128), (1, 256, 64, 64)]
-        # Note: vision_features is the same as backbone_fpn[-1]
+        # CRITICAL: Use no_grad to prevent gradient graph accumulation
+        # Without this, computational graphs are kept in memory (~3GB per frame!)
+        with torch.no_grad():
+            # compute backbone features
+            backbone_out = self.sam.forward_image(image)
+            # vision_features = backbone_out['vision_features']  # (1, 256, 64, 64)
+            vision_pos_enc = backbone_out['vision_pos_enc']  # list: [(1, 256, 256, 256), (1, 256, 128, 128), (1, 256, 64, 64)]
+            backbone_fpn = backbone_out['backbone_fpn']  # list: [(1, 32, 256, 256), (1, 64, 128, 128), (1, 256, 64, 64)]
+            # Note: vision_features is the same as backbone_fpn[-1]
 
-        batch_size = num_obj
-        for i, feat in enumerate(backbone_fpn):
-            backbone_fpn[i] = feat.expand(batch_size, -1, -1, -1)
-        for i, pos in enumerate(vision_pos_enc):
-            vision_pos_enc[i] = pos.expand(batch_size, -1, -1, -1)
-        
-        expanded_backbone_out = {"backbone_fpn": backbone_fpn, "vision_pos_enc": vision_pos_enc}
-        features = self.sam._prepare_backbone_features(expanded_backbone_out)
-        _, vision_feats, vision_pos_embeds, feat_sizes = features
+            batch_size = num_obj
+            for i, feat in enumerate(backbone_fpn):
+                backbone_fpn[i] = feat.expand(batch_size, -1, -1, -1)
+            for i, pos in enumerate(vision_pos_enc):
+                vision_pos_enc[i] = pos.expand(batch_size, -1, -1, -1)
+            
+            expanded_backbone_out = {"backbone_fpn": backbone_fpn, "vision_pos_enc": vision_pos_enc}
+            features = self.sam._prepare_backbone_features(expanded_backbone_out)
+            _, vision_feats, vision_pos_embeds, feat_sizes = features
 
-        # vision_feats: [(65536, 1, 32), (16384, 1, 64), (4096, 1, 256)]
-        # vision_pos_embeds: [(65536, 1, 256), (16384, 1, 256), (4096, 1, 256)]
-        # feat_sizes: actual values: [(256, 256), (128, 128), (64, 64)]
-        return vision_feats, vision_pos_embeds, feat_sizes
+            # vision_feats: [(65536, 1, 32), (16384, 1, 64), (4096, 1, 256)]
+            # vision_pos_embeds: [(65536, 1, 256), (16384, 1, 256), (4096, 1, 256)]
+            # feat_sizes: actual values: [(256, 256), (128, 128), (64, 64)]
+            
+            # MEMORY OPTIMIZATION:
+            # vision_pos_embeds elements are views of the large 4D vision_pos_enc tensors.
+            # Keeping them keeps the 4D tensors (~64MB each) alive.
+            # Since track_step only uses the last level (low-res) of position embeddings,
+            # we can replace the unused levels with None to allow the 4D tensors to be freed.
+            if len(vision_pos_embeds) == 3:
+                vision_pos_embeds[0] = None
+                vision_pos_embeds[1] = None
+            
+            # CRITICAL: Aggressively delete local variables to break reference cycles
+            # The first element of features is expanded_backbone_out, which holds references 
+            # to the large tensors. We must delete it.
+            del _
+            del expanded_backbone_out
+            del backbone_out
+            del vision_pos_enc
+            del backbone_fpn
+            del features
+                
+            return vision_feats, vision_pos_embeds, feat_sizes
 
     def _get_maskmem_pos_enc(self, batch_size=1):
         expanded_maskmem_pos_enc = [
@@ -417,6 +445,7 @@ class DAM4SAMMOT():
         
         return None
     
+    @torch.no_grad()
     def add_object(self, image, region):
         """
         Add a new object during tracking (mid-sequence).
@@ -434,22 +463,45 @@ class DAM4SAMMOT():
         """
         # Note: frame_index is NOT incremented (stays at current tracking frame)
         # The object is initialized at the current frame
+        # ------------------------------------------------------------------
+        # 1. Prepare image features
+        # ------------------------------------------------------------------
+
         
         if self.img_width is None or self.img_height is None:
             self.img_width = image.width
             self.img_height = image.height
         
-        # prepare image
-        img = self._prepare_image(image)
-        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+        # Check if we have cached features for this frame
+        frame_hash = hash((image.tobytes(), self.frame_index))
+        if self._cached_frame_hash == frame_hash and self._cached_features is not None:
+            # Reuse cached features
+            img, feats, pos, feat_sizes = self._cached_features
+
+        else:
+            # prepare image
+            img = self._prepare_image(image)
+            img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+            
+            # compute features
+
+            feats, pos, feat_sizes = self._get_features(img)
+
+            
+            # Cache features for subsequent calls in the same frame (e.g. track())
+            self._cached_features = (img, feats, pos, feat_sizes)
+            self._cached_frame_hash = frame_hash
         
-        # compute features
-        feats, pos, feat_sizes = self._get_features(img)
+        # ------------------------------------------------------------------
+        # 2. Process new object
+        # ------------------------------------------------------------------
         
         # Use helper method to process the new object
+
         per_obj_dict, per_obj_obj_ptr_dict, pred_mask_np = self._process_single_object_init(
             image, region, feats, pos, feat_sizes
         )
+
         
         # Store object state
         new_obj_id = self.next_obj_id
@@ -466,15 +518,26 @@ class DAM4SAMMOT():
         
         return new_obj_id, pred_mask_np
     
+    @torch.no_grad()
     def track(self, image):
         self.frame_index += 1
 
-        # prepare image
-        img = self._prepare_image(image)
-        img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
-        
-        # compute features
-        feats, pos, feat_sizes = self._get_features(img)  # Note: removed number of objects
+        # Check if we have cached features for this frame
+        frame_hash = hash((image.tobytes(), self.frame_index))
+        if self._cached_frame_hash == frame_hash and self._cached_features is not None:
+            # Reuse cached features (e.g., if add_object was just called)
+            img, feats, pos, feat_sizes = self._cached_features
+            # Clear cache after use
+            self._cached_features = None
+            self._cached_frame_hash = None
+
+        else:
+            # prepare image
+            img = self._prepare_image(image)
+            img = img.unsqueeze(0)  # (1, 3, 1024, 1024)
+            
+            # compute features
+            feats, pos, feat_sizes = self._get_features(img)
         
         output_dict_ = {
             'per_obj_dict': self.per_object_outputs_all,
