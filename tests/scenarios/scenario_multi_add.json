@@ -1,0 +1,49 @@
+{
+    "description": "Multi-object addition scenario",
+    "prompts": [
+        {
+            "frame": 0,
+            "obj_id": "person_1",
+            "bbox": [
+                500,
+                90,
+                250,
+                630
+            ],
+            "description": "Frame 0: First person (User provided)"
+        },
+        {
+            "frame": 0,
+            "obj_id": "person_2",
+            "bbox": [
+                1200,
+                200,
+                100,
+                450
+            ],
+            "description": "Frame 0: Second person (User provided)"
+        },
+        {
+            "frame": 30,
+            "obj_id": "new_obj_30",
+            "bbox": [
+                380,
+                170,
+                120,
+                280
+            ],
+            "description": "Frame 30: New object (User provided)"
+        },
+        {
+            "frame": 70,
+            "obj_id": "new_obj_70",
+            "bbox": [
+                700,
+                230,
+                50,
+                170
+            ],
+            "description": "Frame 70: Another new object (User provided)"
+        }
+    ]
+}

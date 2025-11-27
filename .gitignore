@@ -9,3 +9,11 @@ _C.*
 outputs/*
 checkpoints/*.pt
 demo/backend/checkpoints/*.pt
+
+# Data
+n1/
+tests/results/
+tests/test_output/
+tests/helpers/
+*.jpg
+*.mp4
