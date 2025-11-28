@@ -173,3 +173,93 @@ def experiment_with_active_dead_ids():
     print(f"\n최종 객체 수: {len(tracker.all_obj_ids)}")
     monitor.plot("Experiment C - With Active/Dead IDs")
     return monitor
+
+# 7. 비교 플롯
+
+
+def compare_experiments(monitor_a, monitor_b):
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+    # CPU 메모리 비교
+    axes[0, 0].plot(monitor_a.timestamps, monitor_a.cpu_memory,
+                    label='Without Removal', marker='o', linewidth=2)
+    axes[0, 0].plot(monitor_b.timestamps, monitor_b.cpu_memory,
+                    label='With Removal', marker='s', linewidth=2)
+    axes[0, 0].set_xlabel('Time (seconds)')
+    axes[0, 0].set_ylabel('CPU Memory (MB)')
+    axes[0, 0].set_title('CPU Memory Comparison')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True)
+
+    # GPU 메모리 비교
+    axes[0, 1].plot(monitor_a.timestamps, monitor_a.gpu_memory,
+                    label='Without Removal', marker='o', linewidth=2)
+    axes[0, 1].plot(monitor_b.timestamps, monitor_b.gpu_memory,
+                    label='With Removal', marker='s', linewidth=2)
+    axes[0, 1].set_xlabel('Time (seconds)')
+    axes[0, 1].set_ylabel('GPU Memory (MB)')
+    axes[0, 1].set_title('GPU Memory Comparison')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True)
+
+    # 객체 수 비교
+    axes[1, 0].plot(monitor_a.timestamps, monitor_a.num_objects,
+                    label='Without Removal', marker='o', linewidth=2, color='red')
+    axes[1, 0].plot(monitor_b.timestamps, monitor_b.num_objects,
+                    label='With Removal', marker='s', linewidth=2, color='green')
+    axes[1, 0].set_xlabel('Time (seconds)')
+    axes[1, 0].set_ylabel('Number of Objects')
+    axes[1, 0].set_title('Object Count Comparison')
+    axes[1, 0].legend()
+    axes[1, 0].grid(True)
+
+    # 통계 요약
+    stats_text = f"""
+    Experiment A (Without Removal):
+    - Peak CPU: {max(monitor_a.cpu_memory):.1f} MB
+    - Peak GPU: {max(monitor_a.gpu_memory):.1f} MB
+    - Max Objects: {max(monitor_a.num_objects)}
+    
+    Experiment B (With Removal):
+    - Peak CPU: {max(monitor_b.cpu_memory):.1f} MB
+    - Peak GPU: {max(monitor_b.gpu_memory):.1f} MB
+    - Max Objects: {max(monitor_b.num_objects)}
+    
+    Memory Saved:
+    - CPU: {max(monitor_a.cpu_memory) - max(monitor_b.cpu_memory):.1f} MB
+    - GPU: {max(monitor_a.gpu_memory) - max(monitor_b.gpu_memory):.1f} MB
+    """
+
+    axes[1, 1].text(0.1, 0.5, stats_text, fontsize=10, family='monospace',
+                    verticalalignment='center', transform=axes[1, 1].transAxes)
+    axes[1, 1].axis('off')
+
+    plt.tight_layout()
+    plt.savefig('Memory_Comparison.png', dpi=150)
+    plt.show()
+
+
+# 8. 메인 실행
+if __name__ == "__main__":
+    print("🔬 DAM4SAM 메모리 누수 실험 시작\n")
+
+    try:
+        # 실험 A 실행
+        monitor_a = experiment_without_removal()
+
+        # GPU 메모리 정리
+        torch.cuda.empty_cache()
+        time.sleep(5)
+
+        # 실험 B 실행
+        monitor_b = experiment_with_removal()
+
+        # 비교 플롯
+        compare_experiments(monitor_a, monitor_b)
+
+        print("\n✅ 실험 완료!")
+
+    except Exception as e:
+        print(f"\n❌ 실험 중 에러 발생: {e}")
+        import traceback
+        traceback.print_exc()
