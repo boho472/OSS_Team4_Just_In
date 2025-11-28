@@ -10,11 +10,6 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 import sys
 
-# DAM4SAM 코드 경로 추가
-sys.path.append('/content/d4sm')  # ← 실제 경로로 수정
-
-# DAM4SAM import
-
 # 3. 메모리 모니터링 유틸리티
 
 
@@ -87,12 +82,12 @@ def generate_dummy_image(width=1280, height=720):
 def generate_moving_bbox(frame_idx, obj_id, total_frames=1000):
     """화면을 가로지르는 bbox 생성 (화면 밖으로 나가게)"""
     progress = frame_idx / total_frames
-    x = int(progress * 1280) - 100  # 화면 왼쪽에서 오른쪽으로
+    x = int(progress * 1280) - 10  # 화면 왼쪽에서 오른쪽으로
     y = 200 + (obj_id * 50) % 400
     w, h = 100, 150
 
     # 화면 밖으로 나가면 더 이상 보이지 않음
-    if x > 1280 or x < -100:
+    if x > 2.8 or x < -100:
         return None
 
     return [max(0, x), y, w, h]
