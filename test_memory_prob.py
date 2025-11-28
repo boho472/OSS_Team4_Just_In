@@ -1,3 +1,4 @@
+from tracking_wrapper_mot import DAM4SAMMOT
 import torch
 import numpy as np
 import cv2
@@ -7,7 +8,12 @@ import GPUtil
 import time
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from tracking_wrapper_mot import DAM4SAMMOT
+import sys
+
+# DAM4SAM 코드 경로 추가
+sys.path.append('/content/d4sm')  # ← 실제 경로로 수정
+
+# DAM4SAM import
 
 # 3. 메모리 모니터링 유틸리티
 
@@ -103,7 +109,7 @@ def experiment_without_removal():
     tracker = DAM4SAMMOT(model_size='tiny', checkpoint_dir='./checkpoints')
     monitor = MemoryMonitor()
 
-    # 초기 객체
+    # ✅ 수정: initialize() 사용
     image = generate_dummy_image()
     init_regions = [
         {'bbox': [100, 100, 100, 150]},
@@ -121,19 +127,21 @@ def experiment_without_removal():
     for frame_idx in range(1, total_frames + 1):
         image = generate_dummy_image()
 
-        # 새 객체 추가
+        # ✅ 수정: add_new_objects() 사용 (frame_idx, image, regions)
         if frame_idx % add_object_every == 0:
             new_bbox = generate_moving_bbox(
                 frame_idx, tracker.next_obj_id, total_frames)
             if new_bbox:
-                region = {'bbox': new_bbox}
-                tracker.add_object(image, region)
+                regions = [{'bbox': new_bbox}]
+                tracker.add_new_objects(frame_idx, image, regions)
 
         # 추적 수행
         try:
             results = tracker.track(image)
         except Exception as e:
             print(f"\n❌ Frame {frame_idx}에서 에러 발생: {e}")
+            import traceback
+            traceback.print_exc()
             break
 
         # 메모리 모니터링
@@ -161,7 +169,7 @@ def experiment_with_removal():
     tracker = DAM4SAMMOT(model_size='tiny', checkpoint_dir='./checkpoints')
     monitor = MemoryMonitor()
 
-    # 초기 객체
+    # ✅ 수정: initialize() 사용
     image = generate_dummy_image()
     init_regions = [
         {'bbox': [100, 100, 100, 150]},
@@ -182,14 +190,16 @@ def experiment_with_removal():
     for frame_idx in range(1, total_frames + 1):
         image = generate_dummy_image()
 
-        # 새 객체 추가
+        # ✅ 수정: add_new_objects() 사용
         if frame_idx % add_object_every == 0:
             new_bbox = generate_moving_bbox(
                 frame_idx, tracker.next_obj_id, total_frames)
             if new_bbox:
-                region = {'bbox': new_bbox}
-                new_obj_id, _ = tracker.add_object(image, region)
-                object_lifetime[new_obj_id] = frame_idx
+                regions = [{'bbox': new_bbox}]
+                new_obj_ids = tracker.add_new_objects(
+                    frame_idx, image, regions)
+                for new_obj_id in new_obj_ids:
+                    object_lifetime[new_obj_id] = frame_idx
 
         # 오래된 객체 제거
         to_remove = []
@@ -205,8 +215,18 @@ def experiment_with_removal():
                 tracker.per_object_obj_ptr.pop(obj_id, None)
                 tracker.add_to_drm_next.pop(obj_id, None)
 
-                # 인덱스 기반 리스트도 정리 (obj_id가 인덱스라 가정)
-                # 실제로는 obj_id → index 매핑 필요
+                # obj_id를 인덱스로 사용하는 리스트 처리
+                # 주의: object_sizes, last_added는 인덱스 기반
+                # 실제로는 딕셔너리로 변경 권장하지만 여기서는 간단히 처리
+                try:
+                    idx = tracker.all_obj_ids.index(
+                        obj_id) if obj_id in tracker.all_obj_ids else -1
+                    if idx >= 0 and idx < len(tracker.object_sizes):
+                        tracker.object_sizes[idx] = []
+                        tracker.last_added[idx] = -1
+                except:
+                    pass
+
                 object_lifetime.pop(obj_id)
 
         # 추적 수행
@@ -214,6 +234,8 @@ def experiment_with_removal():
             results = tracker.track(image)
         except Exception as e:
             print(f"\n❌ Frame {frame_idx}에서 에러 발생: {e}")
+            import traceback
+            traceback.print_exc()
             break
 
         # 메모리 모니터링
@@ -296,17 +318,23 @@ def compare_experiments(monitor_a, monitor_b):
 if __name__ == "__main__":
     print("🔬 DAM4SAM 메모리 누수 실험 시작\n")
 
-    # 실험 A 실행
-    monitor_a = experiment_without_removal()
+    try:
+        # 실험 A 실행
+        monitor_a = experiment_without_removal()
 
-    # GPU 메모리 정리
-    torch.cuda.empty_cache()
-    time.sleep(5)
+        # GPU 메모리 정리
+        torch.cuda.empty_cache()
+        time.sleep(5)
 
-    # 실험 B 실행
-    monitor_b = experiment_with_removal()
+        # 실험 B 실행
+        monitor_b = experiment_with_removal()
 
-    # 비교 플롯
-    compare_experiments(monitor_a, monitor_b)
+        # 비교 플롯
+        compare_experiments(monitor_a, monitor_b)
 
-    print("\n✅ 실험 완료!")
+        print("\n✅ 실험 완료!")
+
+    except Exception as e:
+        print(f"\n❌ 실험 중 에러 발생: {e}")
+        import traceback
+        traceback.print_exc()
