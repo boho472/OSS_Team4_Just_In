@@ -41,6 +41,20 @@ class MemoryMonitor:
 
         return cpu_mem_mb, gpu_mem_mb
 
+    def get_current_memory(self):
+        """현재 메모리 상태 즉시 조회"""
+        process = psutil.Process()
+        cpu_mem_mb = process.memory_info().rss / 1024 / 1024
+
+        try:
+            gpus = GPUtil.getGPUs()
+            gpu_mem_mb = gpus[0].memoryUsed if gpus else 0
+        except:
+            gpu_mem_mb = torch.cuda.memory_allocated() / 1024 / \
+                1024 if torch.cuda.is_available() else 0
+
+        return cpu_mem_mb, gpu_mem_mb
+
     def plot(self, title="Memory Usage"):
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
 
@@ -67,8 +81,6 @@ class MemoryMonitor:
         plt.tight_layout()
         plt.savefig(f'{title.replace(" ", "_")}.png', dpi=150)
         plt.show()
-
-# 4. 가짜 이미지 생성 (실험용)
 
 
 def generate_dummy_image(width=1280, height=720):
@@ -115,6 +127,10 @@ def experiment_with_active_dead_ids():
 
     object_lifetime = {}  # {obj_id: birth_frame}
 
+    # ✅ 추가: 메모리 변화 추적용 변수
+    last_removal_frame = None
+    memory_before_removal = None
+
     print(f"\n총 프레임: {total_frames}")
     print(f"새 객체 추가 주기: {add_object_every} 프레임")
     print(f"객체 수명: {remove_after_frames} 프레임")
@@ -144,7 +160,12 @@ def experiment_with_active_dead_ids():
         # Active 객체 리스트
         active_ids = list(object_lifetime.keys())
 
-        # ✅ 새 파라미터 사용
+        # ✅ 추가: 삭제 직전 메모리 측정
+        if len(dead_ids) > 0:
+            memory_before_removal = monitor.get_current_memory()
+            last_removal_frame = frame_idx
+
+        # 추적 수행
         try:
             results = tracker.track(
                 image,
@@ -157,7 +178,32 @@ def experiment_with_active_dead_ids():
             traceback.print_exc()
             break
 
-        # 메모리 모니터링
+        # ✅ 추가: 삭제 직후 메모리 측정 및 비교
+        if last_removal_frame == frame_idx and memory_before_removal is not None:
+            memory_after_removal = monitor.get_current_memory()
+            cpu_before, gpu_before = memory_before_removal
+            cpu_after, gpu_after = memory_after_removal
+
+            cpu_freed = cpu_before - cpu_after
+            gpu_freed = gpu_before - gpu_after
+
+            print(f"\n{'🔥' * 30}")
+            print(f"[Frame {frame_idx}] 메모리 해제 효과 측정:")
+            print(
+                f"  제거된 객체: {results.get('removed_track_ids', [])} (총 {len(results.get('removed_track_ids', []))}개)")
+            print(f"  남은 객체 수: {len(tracker.all_obj_ids)}")
+            print(f"  ")
+            print(f"  📊 메모리 변화:")
+            print(
+                f"    CPU: {cpu_before:6.1f}MB → {cpu_after:6.1f}MB (해제: {cpu_freed:+6.1f}MB)")
+            print(
+                f"    GPU: {gpu_before:6.1f}MB → {gpu_after:6.1f}MB (해제: {gpu_freed:+6.1f}MB)")
+            print(f"{'🔥' * 30}\n")
+
+            # 다음 프레임에서도 측정
+            memory_before_removal = None
+
+        # 메모리 모니터링 (정기)
         if frame_idx % 10 == 0:
             cpu_mem, gpu_mem = monitor.record(len(tracker.all_obj_ids))
             active_count = len(results.get('active_track_ids', []))
@@ -175,17 +221,11 @@ def experiment_with_active_dead_ids():
     return monitor
 
 
-# 8. 메인 실행
 if __name__ == "__main__":
-    print("🔬 DAM4SAM 메모리 누수 실험 시작\n")
+    print("🔬 DAM4SAM 메모리 관리 실험 시작\n")
 
     try:
-        # GPU 메모리 정리
-        torch.cuda.empty_cache()
-        time.sleep(5)
-
-        experiment_with_active_dead_ids()
-
+        monitor_c = experiment_with_active_dead_ids()
         print("\n✅ 실험 완료!")
 
     except Exception as e:
