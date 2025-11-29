@@ -8,7 +8,7 @@ from pathlib import Path
 from collections import OrderedDict
 
 import logging
-from hydra import compose
+from hydra import compose, initialize
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
