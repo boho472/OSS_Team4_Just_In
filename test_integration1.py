@@ -3,12 +3,16 @@ test_integration.py
 HybridTrack + DAM4SAM 통합 테스트
 """
 
-import os
-import json
-import numpy as np
+from pathlib import Path
+import sys
 from PIL import Image
-from .HybridTrack_modify2.src.model.model_DAM4SAM import DAM4SAMIntegration
+import numpy as np
+import json
+import os
+BASE_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(BASE_DIR))
 
+from HybridTrack_modify2.src.model.model_DAM4SAM import DAM4SAMIntegration
 
 def create_dummy_image(width=1024, height=1024):
     """더미 이미지 생성"""
