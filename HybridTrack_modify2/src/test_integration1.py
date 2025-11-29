@@ -189,6 +189,30 @@ def test_integration():
             if frame_idx == 5:
                 print(f"  ⚡ Expected: New object (id=3) should be added dynamically")
 
+    # ✅ 비디오 생성 - 함수 안으로 이동!
+    print("\n[4] Generating visualization videos...")
+    print("-"*80)
+    
+    try:
+        from visualize_tracking import create_tracking_video
+        
+        video_path = os.path.join(test_dir, "tracking_result.mp4")
+        create_tracking_video(
+            json_dir=json_dir,
+            output_path=video_path,
+            fps=3  # 천천히 보기 위해 3fps
+        )
+        
+        print(f"\n✅ Video saved: {video_path}")
+        print("   Open this video to see the tracking visualization!")
+        
+    except ImportError:
+        print("\n⚠️ visualize_tracking.py not found. Skipping video generation.")
+    except Exception as e:
+        print(f"\n⚠️ Video generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 if __name__ == "__main__":
     import torch
@@ -197,19 +221,3 @@ if __name__ == "__main__":
         print("⚠️ Warning: CUDA not available. Using CPU (will be slow)")
 
     test_integration()
-
-    print("\n[4] Generating visualization videos...")
-    print("-"*80)
-    
-    # 비디오 생성
-    from visualize_tracking import create_tracking_video
-    
-    video_path = os.path.join(test_dir, "tracking_result.mp4")
-    create_tracking_video(
-        json_dir=json_dir,
-        output_path=video_path,
-        fps=3  # 천천히 보기 위해 3fps
-    )
-    
-    print(f"\n✅ Video saved: {video_path}")
-    print("   Open this video to see the tracking visualization!")
