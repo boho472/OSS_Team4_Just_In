@@ -17,4 +17,4 @@ tests/test_output/
 tests/helpers/
 *.jpg
 *.mp4
-tests2/scripts/venv/
+/venv/
