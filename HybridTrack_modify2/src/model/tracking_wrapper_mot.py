@@ -21,16 +21,16 @@ from sam2.utils.misc import fill_holes_in_mask_scores
 def load_confs(chkpt_path, model_size):
     if model_size == 'large':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_large.pt')
-        model_cfg = "sam2.1/sam2.1_hiera_l"  # ✅ .yaml 제거, configs/ 제거
+        model_cfg = "sam2.1/sam21pp_hiera_l"  # ✅ 실제 파일명에 맞춤
     elif model_size == 'base':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_base.pt')
-        model_cfg = "sam2.1/sam2.1_hiera_b"
+        model_cfg = "sam2.1/sam21pp_hiera_b"
     elif model_size == 'small':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_small.pt')
-        model_cfg = "sam2.1/sam2.1_hiera_s"
+        model_cfg = "sam2.1/sam21pp_hiera_s"
     elif model_size == 'tiny':
         checkpoint = os.path.join(chkpt_path, 'sam2.1_hiera_tiny.pt')
-        model_cfg = "sam2.1/sam2.1_hiera_t"  # ✅ .yaml 제거, configs/ 제거
+        model_cfg = "sam2.1/sam21pp_hiera_t"  # ✅ sam21pp로 변경
     else:
         print('Error: Unknown model size:', model_size)
         exit(-1)
