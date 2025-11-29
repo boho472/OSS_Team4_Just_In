@@ -8,12 +8,11 @@ model:
     scalp: 1
     trunk:
       _target_: sam2.modeling.backbones.hieradet.Hiera
-      embed_dim: 144
-      num_heads: 2
-      stages: [2, 6, 36, 4]
-      global_att_blocks: [23, 33, 43]
+      embed_dim: 96
+      num_heads: 1
+      stages: [1, 2, 7, 2]
+      global_att_blocks: [5, 7, 9]
       window_pos_embed_bkg_spatial_size: [7, 7]
-      window_spec: [8, 4, 16, 8]
     neck:
       _target_: sam2.modeling.backbones.image_encoder.FpnNeck
       position_encoding:
@@ -23,8 +22,8 @@ model:
         scale: null
         temperature: 10000
       d_model: 256
-      backbone_channel_list: [1152, 576, 288, 144]
-      fpn_top_down_levels: [2, 3] # output level 0 and 1 directly use the backbone features
+      backbone_channel_list: [768, 384, 192, 96]
+      fpn_top_down_levels: [2, 3]  # output level 0 and 1 directly use the backbone features
       fpn_interp_model: nearest
 
   memory_attention:
@@ -40,7 +39,7 @@ model:
       self_attention:
         _target_: sam2.modeling.sam.transformer.RoPEAttention
         rope_theta: 10000.0
-        feat_sizes: [32, 32]
+        feat_sizes: [64, 64]
         embedding_dim: 256
         num_heads: 1
         downsample_rate: 1
@@ -51,7 +50,7 @@ model:
       cross_attention:
         _target_: sam2.modeling.sam.transformer.RoPEAttention
         rope_theta: 10000.0
-        feat_sizes: [32, 32]
+        feat_sizes: [64, 64]
         rope_k_repeat: True
         embedding_dim: 256
         num_heads: 1
@@ -61,33 +60,34 @@ model:
     num_layers: 4
 
   memory_encoder:
-    _target_: sam2.modeling.memory_encoder.MemoryEncoder
-    out_dim: 64
-    position_encoding:
-      _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
-      num_pos_feats: 64
-      normalize: true
-      scale: null
-      temperature: 10000
-    mask_downsampler:
-      _target_: sam2.modeling.memory_encoder.MaskDownSampler
-      kernel_size: 3
-      stride: 2
-      padding: 1
-    fuser:
-      _target_: sam2.modeling.memory_encoder.Fuser
-      layer:
-        _target_: sam2.modeling.memory_encoder.CXBlock
-        dim: 256
-        kernel_size: 7
-        padding: 3
-        layer_scale_init_value: 1e-6
-        use_dwconv: True # depth-wise convs
-      num_layers: 2
+      _target_: sam2.modeling.memory_encoder.MemoryEncoder
+      out_dim: 64
+      position_encoding:
+        _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 64
+        normalize: true
+        scale: null
+        temperature: 10000
+      mask_downsampler:
+        _target_: sam2.modeling.memory_encoder.MaskDownSampler
+        kernel_size: 3
+        stride: 2
+        padding: 1
+      fuser:
+        _target_: sam2.modeling.memory_encoder.Fuser
+        layer:
+          _target_: sam2.modeling.memory_encoder.CXBlock
+          dim: 256
+          kernel_size: 7
+          padding: 3
+          layer_scale_init_value: 1e-6
+          use_dwconv: True  # depth-wise convs
+        num_layers: 2
 
   num_maskmem: 7
   image_size: 1024
   # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
+  # SAM decoder
   sigmoid_scale_for_mem_enc: 20.0
   sigmoid_bias_for_mem_enc: -10.0
   use_mask_input_as_output_without_sam: true
@@ -111,12 +111,8 @@ model:
   multimask_output_for_tracking: true
   use_multimask_token_for_obj_ptr: true
   multimask_min_pt_num: 0
-  multimask_max_pt_num: 3
+  multimask_max_pt_num: 1
   use_mlp_for_obj_ptr_proj: true
   # Compilation flag
+  # HieraT does not currently support compilation, should always be set to False
   compile_image_encoder: False
-  # # Changes for SAM2++
-  add_all_frames_to_correct_as_cond: True
-  memory_temporal_stride_for_eval: 5 # memory stride in the RAM
-  non_overlap_masks: false
-  max_cond_frames_in_attn: 1 # number of elements in the DRM

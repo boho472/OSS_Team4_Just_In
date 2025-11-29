@@ -335,7 +335,6 @@ def fill_holes_in_mask_scores(mask, max_area):
         )
         mask = input_mask
 
-    mask = input_mask
     return mask
 
 
