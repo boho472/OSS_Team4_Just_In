@@ -1,0 +1,176 @@
+{
+  "frame_info": {
+    "frame_id": 0,
+    "filename": "000000.jpg",
+    "video_name": "n1",
+    "image_width": 1280,
+    "image_height": 720
+  },
+
+  "yolo_detection": {
+    "num_detections": 7,
+    "detections": [
+      {
+        "bbox": {
+          "x": 515,
+          "y": 81,
+          "w": 225,
+          "h": 634
+        },
+        "class_name": "person"
+      },
+      {
+        "bbox": {
+          "x": 721,
+          "y": 133,
+          "w": 191,
+          "h": 568
+        },
+        "class_name": "person"
+      }
+    ]
+  },
+
+  "normalization": {
+    "list": [
+      {
+        "depth_z": null,
+        "bbox_3d": {
+          "x": 627.5,
+          "y": 398,
+          "z": 0.0,
+          "l": 0.8948,
+          "h": 1.7571,
+          "w": 0.7342,
+          "theta": 0.0
+        }
+      },
+      {
+        "depth_z": null,
+        "bbox_3d": {
+          "x": 816.5,
+          "y": 417,
+          "z": 0.0,
+          "l": 0.8948,
+          "h": 1.7571,
+          "w": 0.7342,
+          "theta": 0.0
+        }
+      }
+    ]
+  },
+
+  "hybridtrack_memory": {
+    "num_activated": 6,
+    "num_tracked": 0,
+    "num_dead": 0,
+    "new_tracks": [1, 2, 3, 4, 5, 6],
+
+    "activated_objects": [
+      {
+        "track_id": 1,
+        "detection_id": 0,
+        "class_name": "person",
+        "bbox_3d": {
+          "x": 627.5,
+          "y": 398,
+          "z": 0.0,
+          "l": 0.8948,
+          "h": 1.7571,
+          "w": 0.7342,
+          "theta": 0.0
+        },
+        "track_status": {
+          "age": 1,
+          "hits": 1,
+          "time_since_update": 0,
+          "confidence": 0.8943805694580078
+        }
+      },
+      {
+        "track_id": 2,
+        "detection_id": 1,
+        "class_name": "person",
+        "bbox_3d": {
+          "x": 816.5,
+          "y": 417,
+          "z": 0.0,
+          "l": 0.0,
+          "h": 0.0,
+          "w": 0.0,
+          "theta": 0.0
+        },
+        "track_status": {
+          "age": 1,
+          "hits": 1,
+          "time_since_update": 0,
+          "confidence": 0.8768391609191895
+        }
+      }
+    ],
+
+    "tracked_objects": [],
+    "dead_objects": []
+  },
+
+  "dam4sam_tracking": {
+    "num_segmented": 2,
+    "HybridTrack_results": [
+      {
+        "object_id": 1,
+        "bbox": {
+          "x": 515,
+          "y": 81,
+          "w": 225,
+          "h": 634
+        },
+        "gap_btw_18_nseen": 0
+      },
+      {
+        "object_id": 2,
+        "bbox": {
+          "x": 721,
+          "y": 133,
+          "w": 191,
+          "h": 568
+        },
+        "gap_btw_18_nseen": 10
+      }
+    ]
+
+    HT에서 18프레임 이하/ 19프레임 이상
+    [0] => 잘 작동한다고 가정하고, DAM4SAM 추적 로직은 따로 브레이크 걸리는 거 없이(비교로직 작동 필요 X -> flag ) 그냥 첫 초기화대로 쭉 작동
+    [1] => 비교로직이 작동. WHY? HT에서 ID Switching이 일어났을 수 있는데 HT는 멍청해짐. 
+        => DAM4SAM이 새로 입력받은 새 객체에 대한 정보가, 정말 새 객체가 맞는지, 아니면 기존 객체인 건지를 확인해야 할 필요가 생긴다.
+        => 비교로직은 어떻게 작동해야 하는가? 
+
+    DAM4SAM내에서 픽셀이 감지되지 않을 때 라는 flag를 이용? 혹은 HT? => HT에 맞추는 게 맞음. 
+    WHY? 동일 프레임에서, segmentaion이 단순 Detection보다 픽셀 감지를 더 잘 할 수 있기에, HT와 DAM4SAM에서 undected_frames가 
+    다를 수 있다. 
+    => HT에서 last_detected_frame을 받아온다.
+
+    어떻게 몇 프레임만큼 보이지 않았는지를 측정할 것인가? => 현재프레임_num - last_detected_frame
+
+    HT에서 새 객체가 들어올 때만 bbox, obj_id, gap_between_18_not-seen만 받아온다. 
+    비교로직: DAM4SAM이 한 번 초기화되면, 해당 객체를 쭉 tracking 하고, 현재 tracking하는 
+    mask 정보를 bbox로 반환하여 HT에서 받은 obj_id와 함께 each_frame json에 저장한다. 
+    이후 HT에서 새 객체가 들어올 때, bbox, obj_id, gap_btw_18_nseen 정보를 받아오는데, 
+    obj_id를 비교하여 같은 obj_id에 대해, HT에서 받은 bbox와 DAM4SAM의 bbox를 비교하여 
+    IoU를 기준으로 일정 threshold를 넘어가면 HT에서 온 새로운 DAM4SAM 초기화 요청을 무시한다.
+
+    DAM4SAM_track_result: {
+      obj_id: 2, 
+      last_detected_frame: 13,  
+      gap_between_18_not-seen: 0 // -> HT와 DAM4SAM 비교로직 작동()
+
+    }
+  },
+
+  "pipeline_status": {
+    "yolo_success": true,
+    "hybridtrack_success": true,
+    "dam4sam_success": true,
+    "errors": [],
+    "warnings": []
+  }
+}
