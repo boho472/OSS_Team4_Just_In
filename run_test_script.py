@@ -87,7 +87,7 @@ def run_test():
     print("\n[1] Initializing DAM4SAM...")
     tracker = DAM4SAMMOT(
         model_size='tiny',
-        checkpoint_dir="~/DAM4SAM_Final_OSS_Team4_Just_In/checkpoints"
+        checkpoint_dir="/OSS_Team4_Just_In/checkpoints"
     )
     print("✅ DAM4SAM Initialized")
 
