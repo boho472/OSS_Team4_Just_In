@@ -895,6 +895,9 @@ class DAM4SAMMOT():
 
         ht_results = frame_data['dam4sam_tracking']['HybridTrack_results']
 
+        # 액션 로그
+        actions = []
+
         # 첫 프레임이면 초기화
         if frame_idx == 0:
             init_regions = []
@@ -902,6 +905,11 @@ class DAM4SAMMOT():
                 bbox = ht_obj['bbox']
                 init_regions.append({
                     'bbox': [bbox['x'], bbox['y'], bbox['w'], bbox['h']]
+                })
+
+                actions.append({
+                    'ht_obj_id': ht_obj['object_id'],
+                    'action': 'INIT'
                 })
 
             self.initialize(image, init_regions)
@@ -921,9 +929,19 @@ class DAM4SAMMOT():
 
                 if exists:
                     # 이미 추적 중! HT의 초기화 요청 무시
+                    overlap_ratio = self._calculate_overlap_ratio(
+                        bbox, matched_internal_id)
+
                     print(f"[FILTER] Frame {frame_idx}, HT obj_id {ht_obj_id}: "
                           f"Already tracking (internal_id={matched_internal_id}), ignoring init request")
-                    continue
+
+                    actions.append({
+                        'ht_obj_id': ht_obj_id,
+                        'internal_id': matched_internal_id,
+                        'action': 'FILTER',
+                        'overlap_ratio': round(overlap_ratio, 3)
+                    })
+
                 else:
                     # 새 객체! 초기화
                     print(f"[NEW] Frame {frame_idx}, HT obj_id {ht_obj_id}: "
@@ -934,15 +952,65 @@ class DAM4SAMMOT():
                     internal_id, mask = self.add_object(image, region)
                     print(f"      → Assigned internal_id={internal_id}")
 
+                    actions.append({
+                        'ht_obj_id': ht_obj_id,
+                        'internal_id': internal_id,
+                        'action': 'NEW',
+                        'overlap_ratio': 0.0
+                    })
+
             # 추적 수행
             outputs = self.track(image)
 
         # 결과를 JSON에 저장
-        self.save_results_to_json(frame_idx, json_path, outputs)
+        self.save_results_to_json(frame_idx, json_path, outputs, actions)
 
         return outputs
 
-    def save_results_to_json(self, frame_idx, json_path, outputs):
+    def _calculate_overlap_ratio(self, bbox, internal_id):
+        """bbox와 내부 ID의 mask 간 overlap ratio 계산"""
+        x, y, w, h = bbox['x'], bbox['y'], bbox['w'], bbox['h']
+
+        if internal_id not in self.all_obj_ids:
+            return 0.0
+
+        obj_mem = self.per_object_outputs_all[internal_id]
+        if not obj_mem:
+            return 0.0
+
+        latest_mem = obj_mem[-1]
+        pred_mask = latest_mem['pred_masks']
+
+        if isinstance(pred_mask, np.ndarray):
+            mask = pred_mask[0, 0]
+        else:
+            mask = pred_mask[0, 0].cpu().numpy()
+
+        # mask를 원본 크기로 리사이즈
+        if mask.shape[0] != self.img_height or mask.shape[1] != self.img_width:
+            import cv2
+            mask = cv2.resize(mask, (self.img_width, self.img_height),
+                              interpolation=cv2.INTER_LINEAR)
+
+        # bbox 영역 추출
+        y_start = max(0, y)
+        y_end = min(self.img_height, y + h)
+        x_start = max(0, x)
+        x_end = min(self.img_width, x + w)
+
+        if y_end <= y_start or x_end <= x_start:
+            return 0.0
+
+        mask_crop = mask[y_start:y_end, x_start:x_end]
+        bbox_area = w * h
+
+        if bbox_area == 0:
+            return 0.0
+
+        overlap_area = np.sum(mask_crop > 0)
+        return overlap_area / bbox_area
+
+    def save_results_to_json(self, frame_idx, json_path, outputs, actions=None):
         """
         DAM4SAM 추적 결과를 JSON 파일에 저장
 
@@ -957,7 +1025,6 @@ class DAM4SAMMOT():
 
         # DAM4SAM 결과 생성
         dam4sam_results = []
-
         masks = outputs['masks']
 
         for obj_idx, obj_id in enumerate(self.all_obj_ids):
@@ -965,7 +1032,6 @@ class DAM4SAMMOT():
                 break
 
             mask = masks[obj_idx]
-
             # mask를 bbox로 변환
             bbox = self._mask_to_bbox_dict(mask)
 
@@ -977,6 +1043,10 @@ class DAM4SAMMOT():
 
         # JSON 업데이트
         frame_data['dam4sam_tracking']['DAM4SAM_results'] = dam4sam_results
+
+        # 액션 로그 추가
+        if actions:
+            frame_data['dam4sam_tracking']['actions'] = actions
 
         # JSON 저장
         with open(json_path, 'w', encoding='utf-8') as f:
