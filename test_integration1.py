@@ -7,7 +7,7 @@ import os
 import json
 import numpy as np
 from PIL import Image
-from HybridTrack_modify2.src.model.model_DAM4SAM import DAM4SAMIntegration
+from .HybridTrack_modify2.src.model.model_DAM4SAM import DAM4SAMIntegration
 
 
 def create_dummy_image(width=1024, height=1024):
