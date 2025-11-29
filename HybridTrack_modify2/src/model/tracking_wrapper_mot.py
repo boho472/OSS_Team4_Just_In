@@ -32,33 +32,25 @@ def _load_checkpoint(model, ckpt_path):
 
 
 def build_sam(config_file, ckpt_path=None, device="cuda", mode="eval", hydra_overrides_extra=[], apply_postprocessing=True):
-    # hydra_overrides = [
-    #     "++model._target_=sam2.sam2_video_predictor.SAM2VideoPredictor",
-    # ]
     hydra_overrides = []
     if apply_postprocessing:
         hydra_overrides_extra = hydra_overrides_extra.copy()
         hydra_overrides_extra += [
-            # dynamically fall back to multi-mask if the single mask is not stable
             "++model.sam_mask_decoder_extra_args.dynamic_multimask_via_stability=true",
             "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_delta=0.05",
             "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_thresh=0.98",
-            # the sigmoid mask logits on interacted frames with clicks in the memory encoder so that the encoded masks are exactly as what users see from clicking
             "++model.binarize_mask_from_pts_for_mem_enc=true",
-            # fill small holes in the low-res masks up to `fill_hole_area` (before resizing them to the original video resolution)
-            # "++model.fill_hole_area=8",  # [AL] commented out due to different SAM class
         ]
     hydra_overrides.extend(hydra_overrides_extra)
 
     # ===== 수정 시작 =====
     # configs 디렉토리의 절대 경로 계산
-    # tracking_wrapper_mot.py가 src/model/에 있고, configs는 src/configs/에 있음
     current_file = Path(__file__).resolve()  # src/model/tracking_wrapper_mot.py
     src_dir = current_file.parent.parent  # src/
     config_dir = src_dir / "configs"  # src/configs/
     
     # Hydra GlobalHydra 초기화 (이전 초기화가 있다면 클리어)
-    from hydra import GlobalHydra
+    from hydra.core.global_hydra import GlobalHydra
     GlobalHydra.instance().clear()
     
     # Hydra 초기화 with absolute path
