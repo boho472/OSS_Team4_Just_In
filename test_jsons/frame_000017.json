@@ -1,0 +1,17 @@
+{
+  "frame_number": 17,
+  "dam4sam_tracking": {
+    "HybridTrack_results": [
+      {
+        "object_id": 1,
+        "bbox": {
+          "x": 117,
+          "y": 100,
+          "w": 50,
+          "h": 50
+        }
+      }
+    ],
+    "DAM4SAM_results": []
+  }
+}
