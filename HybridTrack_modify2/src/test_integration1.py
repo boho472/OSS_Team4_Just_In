@@ -12,7 +12,7 @@ import os
 BASE_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(BASE_DIR))
 
-from HybridTrack_modify2.src.model.model_DAM4SAM import DAM4SAMIntegration
+from model.model_DAM4SAM import DAM4SAMIntegration
 
 def create_dummy_image(width=1024, height=1024):
     """더미 이미지 생성"""
