@@ -30,8 +30,12 @@ def _load_checkpoint(model, ckpt_path):
             raise RuntimeError()
         logging.info("Loaded checkpoint sucessfully")
 
+from hydra.core.global_hydra import GlobalHydra
 
 def build_sam(config_file, ckpt_path=None, device="cuda", mode="eval", hydra_overrides_extra=[], apply_postprocessing=True):
+
+    # 이미 초기화된 Hydra가 있으면 clear
+    GlobalHydra.instance().clear()
 
     hydra_overrides = []
     if apply_postprocessing:
