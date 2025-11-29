@@ -94,7 +94,7 @@ def run_test():
 
     # 30개 프레임 처리
     print("\n[2] Processing 30 frames...")
-    print("-*80")
+    print("-"*80)
 
     for frame_idx in range(30):
         # JSON 파일 경로
