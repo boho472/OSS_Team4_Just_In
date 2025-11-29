@@ -6,7 +6,7 @@ HybridTrack과 연동하여 동적 객체 추가 기능 제공
 import os
 import json
 from PIL import Image
-from tracking_wrapper_mot import DAM4SAMMOT
+from .tracking_wrapper_mot import DAM4SAMMOT
 
 
 class DAM4SAMIntegration:
