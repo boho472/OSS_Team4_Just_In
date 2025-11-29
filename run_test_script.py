@@ -85,9 +85,10 @@ def run_test():
 
     # DAM4SAM 초기화
     print("\n[1] Initializing DAM4SAM...")
+    checkpoint_path = os.path.join(os.getcwd(), "checkpoints")
     tracker = DAM4SAMMOT(
         model_size='tiny',
-        checkpoint_dir="/checkpoints"
+        checkpoint_dir=checkpoint_path
     )
     print("✅ DAM4SAM Initialized")
 
