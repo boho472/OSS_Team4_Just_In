@@ -48,8 +48,9 @@ def build_sam(config_file, ckpt_path=None, device="cuda", mode="eval", hydra_ove
         ]
     hydra_overrides.extend(hydra_overrides_extra)
 
+    GlobalHydra.instance().clear()  # 이전 초기화 해제
     # Hydra initialize
-    with initialize(config_path="../../configs"):  # test_integration1.py 기준
+    with initialize(config_path="configs"):  # src 기준
         cfg = compose(config_name="sam2.1.sam21pp_hiera_t", overrides=hydra_overrides)
         OmegaConf.resolve(cfg)
         model = instantiate(cfg.model, _recursive_=True)
