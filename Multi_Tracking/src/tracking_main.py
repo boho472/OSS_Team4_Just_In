@@ -14,6 +14,7 @@ import json
 import os
 import argparse
 import torch
+import cv2
 from PIL import Image
 from json_system.frame_db import update_frame_db
 from json_system.tracker_log import update_tracker_log
@@ -29,6 +30,9 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
     detections_path += "/" + str(seq_id).zfill(4)
     save_json_path = config.save_json_path + "/" + str(seq_id).zfill(4)
     os.makedirs(save_json_path, exist_ok=True)
+
+    # used_frame 폴더 생성 (시각화 이미지 저장용)
+    os.makedirs(used_frame, exist_ok=True)
 
     tracker = HYBRIDTRACK(box_type="Kitti", tracking_features=False, config = config)
     dataset = KittiTrackingDataset(dataset_path,save_frame,seq_id=seq_id,ob_path=detections_path,type=[tracking_type])
@@ -161,6 +165,112 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
         )
         print(f"✅ DAM4SAM processed frame {i}: {len(dam_outputs['masks'])} objects tracked")
         
+        # ===========================
+        # Segmentation 시각화 이미지 생성 및 used_frame 폴더에 저장
+        # ===========================
+        if dam_outputs['masks']:
+            vis_image = visualize_segmentation(
+                image=np.array(image),
+                masks=dam_outputs['masks'],
+                obj_ids=dam_outputs.get('obj_ids', list(range(len(dam_outputs['masks'])))),
+                scores=dam_outputs.get('scores', None)
+            )
+            
+            # used_frame 폴더에 시각화 이미지 저장
+            vis_save_path = os.path.join(used_frame, saved_frame[i])
+            cv2.imwrite(vis_save_path, cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR))
+            print(f"💾 Saved visualization to used_frame: {vis_save_path}")
+        else:
+            # 마스크가 없는 경우 원본 이미지를 복사
+            import shutil
+            vis_save_path = os.path.join(used_frame, saved_frame[i])
+            shutil.copy(image_path, vis_save_path)
+            print(f"⚠️ No masks detected, copied original image: {vis_save_path}")
+        
+def visualize_segmentation(image, masks, obj_ids, scores=None, alpha=0.5):
+    """
+    Segmentation 마스크를 원본 이미지 위에 오버레이하여 시각화
+    
+    Args:
+        image: 원본 이미지 (numpy array, RGB)
+        masks: 마스크 리스트 (각 마스크는 binary numpy array)
+        obj_ids: 객체 ID 리스트
+        scores: 신뢰도 점수 리스트 (optional)
+        alpha: 마스크 투명도 (0~1)
+    
+    Returns:
+        시각화된 이미지 (numpy array, RGB)
+    """
+    import cv2
+    import numpy as np
+    
+    # 이미지 복사
+    vis_image = image.copy()
+    
+    # 각 객체별로 고유한 색상 생성
+    np.random.seed(42)  # 일관된 색상을 위해
+    colors = [tuple(np.random.randint(0, 255, 3).tolist()) for _ in range(len(masks))]
+    
+    # 각 마스크를 오버레이
+    for idx, (mask, obj_id) in enumerate(zip(masks, obj_ids)):
+        if mask.sum() == 0:  # 빈 마스크는 건너뜀
+            continue
+            
+        color = colors[idx % len(colors)]
+        
+        # 마스크 영역을 색상으로 채움
+        colored_mask = np.zeros_like(vis_image)
+        colored_mask[mask > 0] = color
+        
+        # 알파 블렌딩으로 오버레이
+        vis_image = cv2.addWeighted(vis_image, 1, colored_mask, alpha, 0)
+        
+        # 마스크 윤곽선 그리기
+        contours, _ = cv2.findContours(
+            mask.astype(np.uint8), 
+            cv2.RETR_EXTERNAL, 
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(vis_image, contours, -1, color, 2)
+        
+        # 객체 ID와 점수 표시
+        if len(contours) > 0:
+            # 마스크의 중심점 계산
+            M = cv2.moments(contours[0])
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                
+                # 텍스트 생성
+                if scores is not None:
+                    text = f"ID:{obj_id} ({scores[idx]:.2f})"
+                else:
+                    text = f"ID:{obj_id}"
+                
+                # 텍스트 배경 그리기
+                (text_width, text_height), _ = cv2.getTextSize(
+                    text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+                )
+                cv2.rectangle(
+                    vis_image, 
+                    (cx - 5, cy - text_height - 5), 
+                    (cx + text_width + 5, cy + 5), 
+                    color, 
+                    -1
+                )
+                
+                # 텍스트 그리기
+                cv2.putText(
+                    vis_image, 
+                    text, 
+                    (cx, cy), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.6, 
+                    (255, 255, 255), 
+                    2
+                )
+    
+    return vis_image
 
 def tracking_val_seq(arg):
 
