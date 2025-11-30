@@ -56,7 +56,14 @@ class DAM4SAMIntegration:
 
         Args:
             frame_idx: 현재 프레임 번호
-            new_info: HybridTrack의 new_info 리스트
+            new_info: HybridTrack의 new_info 딕셔너리
+                    {
+                        "frame_000038: {
+                            "tracks_1": {"created_frame": 38, "det_bbox": [x,y,w,h], ...},
+                            "tracks_2": {...},
+                            "dead": []
+                        }
+                    }
                     [{object_id, bbox: {x,y,w,h}, gap_btw_18_nseen}, ...]
             json_dir: JSON 저장 디렉토리
 
@@ -74,19 +81,41 @@ class DAM4SAMIntegration:
             }
         }
 
-        # new_info를 HybridTrack_results로 변환
-        for obj_info in new_info:
+        frame_key = f"frame_{frame_idx:06d}"
+
+        if frame_key not in new_info:
+            print(f"Warning: {frame_key} not found in new_info")
+            #빈 JSON 저장
+            json_path = os.path.join(json_dir, f"frame_{frame_idx:06d}.json")
+            with open(json_path, 'w', encoding='utf_8') as f:
+                json.dump(frame_data, f, indent=2, ensure_ascii=False)
+            return json_path
+
+        frame_tracks = new_info[frame_key]
+
+        for track_key, track_info in frame_tracks.items():
+            if not track_key.startswith("tracks_"):
+                continue
+                
+            #track_id 추출: "tracks_1 -> 1"
+            track_id = int(track_key.split("_")[1])
+
+            #det_bbox 추출: [x, y, w, h]
+            det_bbox = track_info.get("det_bbox")
+            if det_bbox is None:
+                print(f"Warning: det_bbox missing for {track_key}")
+                continue
+            
             ht_result = {
-                "object_id": obj_info["object_id"],
+                "object_id": track_id,
                 "bbox": {
-                    "x": int(obj_info["bbox"]["x"]),
-                    "y": int(obj_info["bbox"]["y"]),
-                    "w": int(obj_info["bbox"]["w"]),
-                    "h": int(obj_info["bbox"]["h"])
+                    "x": int(det_bbox[0]),
+                    "y": int(det_bbox[1]),
+                    "w": int(det_bbox[2]),
+                    "z": int(det_bbox[3])
                 }
             }
-            frame_data["dam4sam_tracking"]["HybridTrack_results"].append(
-                ht_result)
+            frame_data["dam4sam_tracking"]["HybridTrack_results"].append(ht_result)
 
         # JSON 파일 저장
         json_path = os.path.join(json_dir, f"frame_{frame_idx:06d}.json")
