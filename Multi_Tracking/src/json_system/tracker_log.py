@@ -65,4 +65,4 @@ def update_tracker_log(save_json_path,frame_num,result_dict):
     log[frame_num] = result_dict[frame_num]
 
     # 저장
-    save_tracker_log(save_json_paht,log)
+    save_tracker_log(save_json_path,log)

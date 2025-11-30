@@ -6,7 +6,7 @@ from model.model_DAM4SAM import DAM4SAMIntegration
 from dataset.tracking_dataset import KittiTrackingDataset
 from tracker.hybridtrack import HYBRIDTRACK
 from configs.config_utils import cfg, cfg_from_yaml_file
-#from ultralytics import YOLO
+from ultralytics import YOLO
 import numpy as np
 import matplotlib.pyplot as plt
 import glob
@@ -28,7 +28,8 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
     tracking_type = config.tracking_type
     detections_path += "/" + str(seq_id).zfill(4)
     save_json_path = config.save_json_path + "/" + str(seq_id).zfill(4)
-    
+    os.makedirs(save_json_path, exist_ok=True)
+
     tracker = HYBRIDTRACK(box_type="Kitti", tracking_features=False, config = config)
     dataset = KittiTrackingDataset(dataset_path,save_frame,seq_id=seq_id,ob_path=detections_path,type=[tracking_type])
     dam4sam = DAM4SAMIntegration(
@@ -42,19 +43,19 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
     new_info_dict = {}
     dict_key = []
     
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
-    #yolo_det = YOLO("yolo11n.pt")
-    #yolo_seg = YOLO("yolo11n-seg.pt")
-    #depth_model = torch.hub.load("isl-org/ZoeDepth", "ZoeD_NK", pretrained=True).to(device).eval()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    yolo_det = YOLO("yolo11n.pt")
+    yolo_seg = YOLO("yolo11n-seg.pt")
+    depth_model = torch.hub.load("isl-org/ZoeDepth", "ZoeD_NK", pretrained=True).to(device).eval()
     
     for i in range(len(dataset)):
         image_path = os.path.join(save_frame, saved_frame[i])
         txt_path = os.path.join(save_txt, saved_frame[i][:-4]+'.txt')
-        """
+        
         boxes, masks = use_YOLO(image_path,yolo_det, yolo_seg)
-        depth_map = use_ZoeDepth(image_path,depth_model,device,save_json_path,saved_frame[i][:-4])
-        convert_to_3D(txt_path,boxes,masks,depth_map)
-        """
+        depth_map = use_ZoeDepth(image_path,depth_model,device)
+        convert_to_3D(txt_path,boxes,masks,depth_map, save_json_path,saved_frame[i][:-4])
+        
         
         _, _, _, _, objects, det_scores, _ = dataset[i]
         mask = det_scores>config.input_score
@@ -95,8 +96,8 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
                 new_dict[obj_id_str] = {}
                 new_dict[obj_id_str]["created_frame"] = int(saved_frame[i][:-4])
                 new_dict[obj_id_str]["last_detected_frame"] = int(saved_frame[i][:-4])
-                new_dict[obj_id_str]["det_bbox"] = {}
                 new_dict[obj_id_str]["undetected_num"] = 0
+                new_dict[obj_id_str]["det_bbox"] = {}
                 new_dict[obj_id_str]["det_bbox"]["x"] = float(whole_txt_file[obj_num, 4])
                 new_dict[obj_id_str]["det_bbox"]["y"] = float(whole_txt_file[obj_num, 5])
                 new_dict[obj_id_str]["det_bbox"]["w"] = float(whole_txt_file[obj_num, 6])

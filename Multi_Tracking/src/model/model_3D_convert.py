@@ -1,5 +1,7 @@
 import numpy as np
 import cv2
+import os
+import json
 
 def middle_40_mask(mask_full):
     ys, xs = np.where(mask_full > 0)
@@ -54,6 +56,8 @@ def convert_to_3D(txt_path,boxes,masks,depth_map,save_json_path,file_name):
     
     for idx, (bbox, mask_full) in enumerate(zip(boxes, masks)):
         x1, y1, x2, y2 = bbox
+        
+        det_id = f"det_{idx}"
         
         yolo_dict[det_id] = {
             "bbox": [int(x1), int(y1), int(x2), int(y2)],
