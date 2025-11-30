@@ -36,11 +36,13 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
 
     tracker = HYBRIDTRACK(box_type="Kitti", tracking_features=False, config = config)
     dataset = KittiTrackingDataset(dataset_path,save_frame,seq_id=seq_id,ob_path=detections_path,type=[tracking_type])
+    import os
+    print(os.path.abspath(__file__))
     dam4sam = DAM4SAMIntegration(
         model_size=config.d4sm_model_size if hasattr(
             config, 'd4sm_model_size') else 'tiny',
         checkpoint_dir=config.checkpoint_dir if hasattr(
-            config, 'checkpoint_dir') else './checkpoints'
+            config, 'checkpoint_dir') else 'src/checkpoints'
     )
     
     new_info = []
