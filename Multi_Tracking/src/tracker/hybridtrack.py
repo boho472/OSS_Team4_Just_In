@@ -1,0 +1,288 @@
+import os
+import torch
+from typing import Optional, Tuple, List, Dict
+from tools.batch_generation import SystemModel
+from dataset.tracking_dataset_utils import read_calib
+from tracker.obectPath import ObjectPath
+from .box_op_2d import convert_bbs_type_initial, register_bbs_initial
+from .cIoU import ciou_3d
+from model.LearnableKF import LEARNABLEKF
+from model.model_parameters import m, n, f, hRotate
+
+class HYBRIDTRACK:
+    def __init__(self, tracking_features: bool = False, bb_as_features: bool = False, box_type: str = 'Kitti', config=None):
+        """
+        Initialize the 3D tracker.
+        Args:
+            tracking_features: Track features if True.
+            bb_as_features: Use bounding boxes as features if True.
+            box_type: Box type ("OpenPCDet", "Kitti", "Waymo").
+            config: Configuration object.
+        """
+        self.new_obj = []
+        self.previous_frame_ids = []
+        self.current_frame_ids = []
+        self.dead_list = []
+        self.config = config
+        self.current_timestamp: Optional[int] = None
+        self.current_pose = None
+        self.current_bbs = None
+        self.current_features = None
+        self.current_scores = None
+        self.tracking_features = tracking_features
+        self.bb_as_features = bb_as_features
+        self.box_type = box_type
+        self.track_dim = 7
+        self.label_seed = 0
+        self.batch_size = 5000
+        self.active_trajectories: Dict = {}
+        self.dead_trajectories: Dict = {}
+        self.memory_pool: Dict = {}
+        self.device = torch.device(self.config.DEVICE) if self.config and hasattr(self.config, 'DEVICE') else torch.device('cuda:0')
+        self._init_lkf()
+
+    def remove_model_from_gpu(self):
+        del self.learnableKF
+
+    def tracking(self, bbs_3D=None, features=None, scores=None, pose=None, timestamp=None, v2c=None, p2=None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Track objects at the given timestamp.
+        Args:
+            bbs_3D: (N,7) or (N,7*k) array of 3D bounding boxes or tracklets.
+            features: (N,k) array of features.
+            scores: (N,) array of detection scores.
+            pose: (4,4) pose matrix.
+            timestamp: Current timestamp (int).
+            v2c, p2: Calibration matrices (optional).
+        Returns:
+            bbs: (M,7) array of tracked bounding boxes.
+            ids: (M,) array of assigned IDs.
+        """
+        self.current_bbs = bbs_3D
+        self.current_features = features
+        self.current_scores = scores
+        self.current_pose = pose
+        self.current_timestamp = timestamp
+        self.v2c = v2c
+        self.p2 = p2
+        return self._pipeline()
+
+    def _init_lkf(self):
+        from configs.config_utils import get_cfg
+        cfg = get_cfg()
+        yaml_path = os.path.join(os.path.dirname(__file__), '../configs/training.yaml')
+        cfg.merge_from_file(yaml_path)
+        this_config = cfg
+        m1x_0 = torch.zeros(self.track_dim, device=self.device)
+        m2x_0 = torch.zeros(self.track_dim, device=self.device)
+        Q = torch.eye(self.track_dim, device=self.device)
+        P = torch.eye(self.track_dim, device=self.device)
+        sys_model = SystemModel(f, Q, hRotate, P, 1, 1, m, n)
+        sys_model.InitSequence(m1x_0, m2x_0)
+        
+        self.learnableKF = LEARNABLEKF(sys_model, this_config)
+        loaded_state = torch.load(self.config.model_checkpoint, map_location=self.device, weights_only=False)
+        if hasattr(loaded_state, 'state_dict'):
+            state_dict = loaded_state.state_dict()
+        else:
+            state_dict = loaded_state
+        
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith('KNet_model.'):
+                # KNet_model 접두사를 LKF_model로 변경
+                new_key = k.replace('KNet_model.', 'LKF_model.')
+            elif k.startswith('learnableKF.KNet_model.'): # 모델 객체 안에 감싸져 저장된 경우를 대비
+                 new_key = k.replace('learnableKF.KNet_model.', 'LKF_model.')
+            else:
+                new_key = k
+            new_state_dict[new_key] = v
+        self.learnableKF.load_state_dict(new_state_dict)
+        self.learnableKF = self.learnableKF.to(self.device)
+        self.learnableKF.LKF_model.init_hidden_LKF()
+        ones_init = torch.ones((self.batch_size, self.track_dim, 1), device=self.device)
+        self.learnableKF.LKF_model.InitSequence(ones_init, 0)
+        self.learnableKF.LKF_model.m1y = ones_init.clone()
+        self.learnableKF.LKF_model.m1x_prior = ones_init.clone()
+
+    def _pipeline(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        self._trajectories_prediction_step()
+        bbs_empty, ids_empty = self._check_current_bbs_step()
+        if bbs_empty is not None:
+            return bbs_empty, ids_empty
+        self._convert_bbs_step()
+        self._register_bbs_step()
+        ids = self._association_step()
+        self._update_trajectories_step(ids)
+        return self._trajectories_init_step(ids)
+
+    def _trajectories_prediction_step(self):
+        self._trajectories_prediction()
+
+    def _check_current_bbs_step(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        if self.current_bbs is None or len(self.current_bbs) == 0:
+            return torch.zeros(0, 7), torch.zeros(0, dtype=torch.int64)
+        return None, None
+
+    def _convert_bbs_step(self):
+        self.current_bbs = convert_bbs_type_initial(self.current_bbs, self.box_type)
+
+    def _register_bbs_step(self):
+        self.current_bbs = register_bbs_initial(self.current_bbs, self.current_pose)
+
+    def _association_step(self):
+        return self._association()
+
+    def _update_trajectories_step(self, ids):
+        self._trajectories_update(ids)
+
+    def _trajectories_init_step(self, ids):
+        return self._trajectorie_init(ids)
+
+    def _trajectories_prediction(self):
+        if not self.active_trajectories:
+            return
+        dead_track_id = []
+        lkf_model = self.learnableKF.LKF_model  
+        self._lkf_prediction()
+        for key, traj in self.active_trajectories.items():
+            if traj.consecutive_missed_num >= self.config.max_prediction_num:
+                dead_track_id.append(key)
+                continue
+            if len(traj) - traj.consecutive_missed_num == 1 and len(traj) >= self.config.max_prediction_num_for_new_object:
+                dead_track_id.append(key)
+            adjusted_state = traj.state_prediction(self.current_timestamp, lkf_model.m1x_prior[traj.label])
+            lkf_model.m1x_prior[traj.label] = adjusted_state.unsqueeze(1)
+            lkf_model.m1y[traj.label] = adjusted_state.unsqueeze(1)
+        for id in dead_track_id:
+            self.dead_list.append(id)
+            self.dead_trajectories[id] = self.active_trajectories.pop(id)
+
+    def _lkf_prediction(self):
+        with torch.no_grad():
+            self.learnableKF.LKF_model.step_prior()
+
+    def _compute_cost_map(self):
+        all_ids, all_predictions, all_detections = [], [], []
+        for key, traj in self.active_trajectories.items():
+            all_ids.append(key)
+            state = traj.trajectory[self.current_timestamp].predicted_state.reshape(-1)
+            meta = torch.tensor([1, traj.consecutive_missed_num, self.current_timestamp])
+            state = torch.cat([state, meta])
+            all_predictions.append(state)
+        for i, box in enumerate(self.current_bbs):
+            noisy_box = box.clone()
+            noisy_box[:2] += torch.normal(mean=0.0, std=0.0, size=(2,))
+            features = self.current_features[i] if self.current_features is not None else None
+            score = self.current_scores[i]
+            label = 1
+            new_tra = ObjectPath(init_bb=noisy_box, init_features=features, init_score=score, init_timestamp=self.current_timestamp, label=label, tracking_features=self.tracking_features, bb_as_features=self.bb_as_features, config=self.config)
+            state = new_tra.trajectory[self.current_timestamp].predicted_state.reshape(-1)
+            all_detections.append(state)
+        all_detections = torch.stack(all_detections)
+        all_predictions = torch.stack(all_predictions)
+        ciou_cost_3d, _ = ciou_3d(all_detections, all_predictions[..., :-3])
+        threshold_3d_ciou = self.config.threshold_3d
+        cost_dis_ciou_3d = 1 - ciou_cost_3d
+        return cost_dis_ciou_3d, all_ids, threshold_3d_ciou
+
+    def _association(self):
+        if not self.active_trajectories:
+            ids = [self.label_seed + i for i in range(len(self.current_bbs))]
+            self.label_seed += len(self.current_bbs)
+            for i in ids:
+                self.new_obj.append((i,i))
+            return ids
+        cost_map_3d, all_ids, threshold_3d = self._compute_cost_map()
+        ids = []
+        self.new_obj = []
+        for i, _ in enumerate(self.current_bbs):
+            min_val, arg_min1 = torch.min(cost_map_3d[i], dim=0)
+            if min_val < threshold_3d:
+                min_pred_val, arg_min2 = torch.min(cost_map_3d[:, arg_min1], dim=0)
+                if min_pred_val < min_val:
+                    ids.append(self.label_seed)
+                    self.new_obj.append((int(arg_min2),self.label_seed))
+                    self.label_seed += 1
+                else:
+                    ids.append(all_ids[arg_min1])
+                    self.new_obj.append((int(arg_min2),all_ids[arg_min1]))
+                    cost_map_3d[:, arg_min1] = 100000
+            else:
+                min_pred_val, arg_min2 = torch.min(cost_map_3d[:, arg_min1], dim=0)
+                ids.append(self.label_seed)
+                self.new_obj.append((int(arg_min2),self.label_seed))
+                self.label_seed += 1
+        self.previous_frame_ids = list(self.active_trajectories.keys())
+        print(f"[Frame {self.current_timestamp}] ASSOC  → ids={ids}   (active_before={list(self.active_trajectories.keys())})")
+        return ids
+
+    def _trajectories_update(self, ids):
+        assert len(ids) == len(self.current_bbs), "IDs length must match current bounding boxes length"
+        detected_state_template = self.learnableKF.LKF_model.m1x_prior.squeeze(2)
+        for i, label in enumerate(ids):
+            box = self.current_bbs[i]
+            score = self.current_scores[i]
+            if label in self.active_trajectories and score > self.config.update_score:
+                detected_state_template[label] = box
+        self._lkf_update_step(detected_state_template)
+
+    def _lkf_update_step(self, detected_state_template):
+        with torch.no_grad():
+            detected_state_template = detected_state_template.to(self.device)
+            lkf_model = self.learnableKF.LKF_model
+            lkf_model.y_previous = lkf_model.y_previous.to(self.device)
+            N = detected_state_template.shape[0]
+            if lkf_model.h_Q.shape[1] != N:
+                hidden_dim = lkf_model.h_Q.shape[2]
+                model_device = lkf_model.h_Q.device
+                lkf_model.h_Q = torch.zeros(1, N, hidden_dim, device=self.device)
+                if hasattr(lkf_model, 'h_Sigma'):
+                    lkf_model.h_Sigma = torch.zeros(1, N, hidden_dim, device=self.device)
+                if hasattr(lkf_model, 'h_S'):
+                    lkf_model.h_S = torch.zeros(1, N, hidden_dim, device=self.device)
+            lkf_model.step_KGain_est(detected_state_template)
+            lkf_model.m1x_prior_previous = lkf_model.m1x_prior
+            KF_gain = lkf_model.KGain
+            dy = detected_state_template.unsqueeze(2) - lkf_model.m1y
+            INOV = torch.bmm(KF_gain, dy)
+            lkf_model.m1x_posterior_previous_previous = lkf_model.m1x_posterior_previous
+            lkf_model.m1x_posterior_previous = lkf_model.m1x_posterior
+            lkf_model.m1x_posterior = lkf_model.m1x_prior + INOV
+            lkf_model.y_previous = detected_state_template.unsqueeze(-1)
+
+    def _trajectorie_init(self, ids):
+        assert len(ids) == len(self.current_bbs), "IDs length must match current bounding boxes length"
+        valid_bbs, valid_ids = [], []
+        lkf_model = self.learnableKF.LKF_model
+        for i, label in enumerate(ids):
+            box = self.current_bbs[i]
+            features = self.current_features[i] if self.current_features is not None else None
+            score = self.current_scores[i]
+            if label in self.active_trajectories and score > self.config.update_score:
+                track = self.active_trajectories[label]
+                track.state_update(bb=box, updated_state=lkf_model.m1x_posterior[label], h_sigma=lkf_model.h_Sigma.squeeze(0)[label], features=features, score=score, timestamp=self.current_timestamp)
+                valid_bbs.append(box)
+                valid_ids.append(label)
+            elif score > self.config.init_score:
+                new_tra = ObjectPath(init_bb=box, init_features=features, init_score=score, init_timestamp=self.current_timestamp, label=label, tracking_features=self.tracking_features, bb_as_features=self.bb_as_features, config=self.config)
+                self.active_trajectories[label] = new_tra
+                valid_bbs.append(box)
+                valid_ids.append(label)
+                # Initialize LKF model state for new trajectory
+                lkf_model.m1x_posterior_previous_previous[label] = (box - 3e-8).unsqueeze(-1)
+                lkf_model.m1x_posterior_previous[label] = (box - 2e-9).unsqueeze(-1)
+                lkf_model.m1x_posterior[label] = box.unsqueeze(-1)
+                lkf_model.m1x_prior_previous[label] = (box - 1e-8).unsqueeze(-1)
+                lkf_model.m1x_prior[label] = box.unsqueeze(-1)
+                lkf_model.m1y[label] = box.unsqueeze(-1)
+                lkf_model.y_previous[label] = lkf_model.m1x_prior_previous[label]
+        if not valid_bbs:
+            return torch.zeros(0, self.current_bbs.shape[1]), torch.zeros(0, dtype=torch.int64)
+        self.current_frame_ids = list(self.active_trajectories.keys())
+        print(f"[Frame {self.current_timestamp}] INIT   → active_after={list(self.active_trajectories.keys())}")
+        return torch.stack(valid_bbs), torch.tensor(valid_ids, dtype=torch.int64)
+
+    def post_processing(self, config):
+        tra = {**self.dead_trajectories, **self.active_trajectories}
+        return tra
