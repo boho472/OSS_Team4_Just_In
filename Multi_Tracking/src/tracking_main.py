@@ -2,7 +2,7 @@ from model.video_frame_exchange import video_to_frame, frame_to_video
 from model.model_YOLO import use_YOLO
 from model.model_ZoeDepth import use_ZoeDepth
 from model.model_3D_convert import convert_to_3D
-#from model.model_DAM4SAM import DAM4SAMIntegration
+from model.model_DAM4SAM import DAM4SAMIntegration
 from dataset.tracking_dataset import KittiTrackingDataset
 from tracker.hybridtrack import HYBRIDTRACK
 from configs.config_utils import cfg, cfg_from_yaml_file
@@ -14,8 +14,10 @@ import json
 import os
 import argparse
 import torch
+from PIL import Image
 from json_system.frame_db import update_frame_db
 from json_system.tracker_log import update_tracker_log
+
 
 def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result_file_name):
     saved_frame = [f for f in os.listdir(save_frame) if f.endswith('.jpg') or f.endswith('.png')]
@@ -29,6 +31,12 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
     
     tracker = HYBRIDTRACK(box_type="Kitti", tracking_features=False, config = config)
     dataset = KittiTrackingDataset(dataset_path,save_frame,seq_id=seq_id,ob_path=detections_path,type=[tracking_type])
+    dam4sam = DAM4SAMIntegration(
+        model_size=config.d4sm_model_size if hasattr(
+            config, 'd4sm_model_size') else 'tiny',
+        checkpoint_dir=config.checkpoint_dir if hasattr(
+            config, 'checkpoint_dir') else './checkpoints'
+    )
     
     new_info = []
     new_info_dict = {}
@@ -117,17 +125,41 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
         result_dict = {}
         frame_num = "frame_" + saved_frame[i][:-4]
         result_dict[frame_num] = new_info_dict
-        
-        save_json_log_path = os.path.join(save_json_path, "hybrid_track_log.json")
-        
+
+        #=======================
+        # tracker_log 업데이트(HT 전체 로그)
+        #=======================
+        save_json_log_path = os.path.join(save_json_path, "hybrid_track_log.json")  
         update_tracker_log(save_json_log_path,frame_num,result_dict)
         
         print(result_dict, "\n")
-        
-        #new_info 값 DAM4SAM으로 전달
-        
-        #DAM4SAM()
 
+        #===========================
+        # HT 결과에서 필요한 정보만 추출
+        #===========================
+        hybridtrack_data = extract_ht_for_dam4sam(result_dict[frame_num])
+
+        #===========================
+        # frame_db에 HT 데이터 업데이트(id, bbox)
+        #===========================
+        frame_json_path = os.path.join(save_json_path, f"{saved_frame[i][:-4]}.json")
+
+        #===========================
+        #DAM4SAM 처리
+        #===========================
+
+        # 현재 프레임 이미지 로드
+        image = Image.open(image_path)
+
+        # DAM4SAM 처리
+        dam_outputs = dam4sam.process_frame(
+            frame_idx=i,
+            frame_json_path=frame_json_path,
+            hybridtrack_data=hybridtrack_data,
+            image=image
+        )
+        print(f"✅ DAM4SAM processed frame {i}: {len(dam_outputs['masks'])} objects tracked")
+        
 
 def tracking_val_seq(arg):
 
@@ -157,6 +189,56 @@ def tracking_val_seq(arg):
         
         frame_to_video(used_frame, result_file_name)
 
+
+def extract_ht_for_dam4sam(frame_tracks):
+    """
+    HybridTrack 결과에서 DAM4SAM에 필요한 정보만 추출
+    
+    Args:
+        frame_tracks: result_dict[frame_key] 내용
+            {
+                "tracks_1": {"created_frame": 38, "det_bbox": {"x":..., "y":..., "w":..., "h":...}, ...},
+                "tracks_2": {...},
+                "dead": []
+            }
+    
+    Returns:
+        [
+            {"object_id": 1, "bbox": [x, y, w, h]},
+            {"object_id": 2, "bbox": [x, y, w, h]},
+            ...
+        ]
+    """
+    ht_results = []
+    
+    for track_key, track_info in frame_tracks.items():
+        # "dead" 키는 스킵
+        if not track_key.startswith("tracks_"):
+            continue
+        
+        # tracks_1 → 1
+        track_id = int(track_key.split("_")[1])
+        
+        # det_bbox 추출
+        det_bbox = track_info.get("det_bbox")
+        if det_bbox is None:
+            continue
+        
+        # status가 "undetected"이면 bbox가 0,0,0,0일 수 있음 → 스킵
+        if track_info.get("status") == "undetected":
+            continue
+        
+        ht_results.append({
+            "object_id": track_id,
+            "bbox": [
+                det_bbox["x"],
+                det_bbox["y"],
+                det_bbox["w"],
+                det_bbox["h"]
+            ]
+        })
+    
+    return ht_results
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='arg parser')
