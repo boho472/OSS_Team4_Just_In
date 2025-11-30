@@ -112,7 +112,7 @@ class DAM4SAMIntegration:
                     "x": int(det_bbox[0]),
                     "y": int(det_bbox[1]),
                     "w": int(det_bbox[2]),
-                    "z": int(det_bbox[3])
+                    "h": int(det_bbox[3])
                 }
             }
             frame_data["dam4sam_tracking"]["HybridTrack_results"].append(ht_result)

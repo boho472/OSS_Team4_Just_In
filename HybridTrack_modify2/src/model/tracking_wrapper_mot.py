@@ -809,97 +809,23 @@ class DAM4SAMMOT():
     # *****************************************************************
     # **              JSON-based HybridTrack Integration            **
     # *****************************************************************
-    def check_if_mask_exists_at_bbox(self, bbox, overlap_threshold=0.3):
-        """
-        주어진 bbox 위치에 이미 segmentation mask가 존재하는지 확인
-
-        Args:
-            bbox: dict with keys 'x', 'y', 'w', 'h'
-            overlap_threshold: bbox 영역 중 몇 % 이상이 mask로 덮여있으면 겹친다고 판단
-
-        Returns:
-            (exists, matched_obj_id) tuple
-            - exists: True if mask exists, False otherwise
-            - matched_obj_id: HT object ID if matched, None otherwise
-        """
-        x, y, w, h = bbox['x'], bbox['y'], bbox['w'], bbox['h']
-
-        # 추적 중인 객체가 없으면 False
-        if not self.all_obj_ids:
-            return False, None
-
-        # 각 객체의 최신 mask 확인
-        for obj_id in self.all_obj_ids:
-            obj_mem = self.per_object_outputs_all[obj_id]
-
-            if not obj_mem:
-                continue
-
-            # 가장 최근 프레임의 mask 가져오기
-            latest_mem = obj_mem[-1]
-            # (1, 1, 256, 256) numpy array
-            pred_mask = latest_mem['pred_masks']
-
-            # (1, 1, H, W) -> (H, W)
-            if isinstance(pred_mask, np.ndarray):
-                mask = pred_mask[0, 0]
-            else:
-                mask = pred_mask[0, 0].cpu().numpy()
-
-            # mask를 원본 이미지 크기로 리사이즈
-            if mask.shape[0] != self.img_height or mask.shape[1] != self.img_width:
-                import cv2
-                mask = cv2.resize(mask, (self.img_width, self.img_height),
-                                  interpolation=cv2.INTER_LINEAR)
-
-            # bbox 영역과 겹치는지 확인
-            y_start = max(0, y)
-            y_end = min(self.img_height, y + h)
-            x_start = max(0, x)
-            x_end = min(self.img_width, x + w)
-
-            if y_end <= y_start or x_end <= x_start:
-                continue
-
-            mask_crop = mask[y_start:y_end, x_start:x_end]
-
-            # bbox 영역 중 mask가 차지하는 비율
-            bbox_area = w * h
-            if bbox_area == 0:
-                continue
-
-            overlap_area = np.sum(mask_crop > 0)
-            overlap_ratio = overlap_area / bbox_area
-
-            if overlap_ratio >= overlap_threshold:
-                print(
-                    f"[MASK EXISTS] Internal obj_id {obj_id}, overlap_ratio={overlap_ratio:.3f}")
-                return True, obj_id
-
-        return False, None
 
     def process_frame_with_ht_json(self, frame_idx, json_path, image):
         """
         HT의 JSON 결과를 읽어서 DAM4SAM 추적 수행
-
-        Args:
-            frame_idx: 현재 프레임 번호
-            json_path: HT 결과가 담긴 JSON 파일 경로
-            image: 현재 프레임 이미지 (PIL Image)
-
-        Returns:
-            outputs: tracking results (same format as track())
+        
+        개선: 현재 프레임 segmentation 먼저 수행 후 비교
         """
         # JSON 읽기
         with open(json_path, 'r', encoding='utf-8') as f:
             frame_data = json.load(f)
 
         ht_results = frame_data['dam4sam_tracking']['HybridTrack_results']
-
-        # 액션 로그
         actions = []
 
-        # 첫 프레임이면 초기화
+        # ==========================================
+        # Frame 0: 초기화
+        # ==========================================
         if frame_idx == 0:
             init_regions = []
             for ht_obj in ht_results:
@@ -907,109 +833,169 @@ class DAM4SAMMOT():
                 init_regions.append({
                     'bbox': [bbox['x'], bbox['y'], bbox['w'], bbox['h']]
                 })
-
                 actions.append({
                     'ht_obj_id': ht_obj['object_id'],
                     'action': 'INIT'
                 })
 
             self.initialize(image, init_regions)
-
-            # 추적 수행
             outputs = self.track(image)
 
+        # ==========================================
+        # Frame N (N > 0): 현재 프레임 우선 추적
+        # ==========================================
         else:
-            # HT의 각 객체 처리
+            # ✅ STEP 1: 기존 객체들 추적 (현재 프레임 segmentation)
+            print(f"\n[STEP 1] Frame {frame_idx}: Tracking {len(self.all_obj_ids)} existing objects...")
+            outputs = self.track(image)
+            
+            print(f"  ✅ Generated {len(outputs['masks'])} masks")
+            for i, obj_id in enumerate(self.all_obj_ids[:len(outputs['masks'])]):
+                pixels = np.sum(outputs['masks'][i] > 0)
+                print(f"     - internal_id={obj_id}: {pixels} pixels")
+            
+            # ✅ STEP 2: 현재 프레임 mask와 HT detection 비교
+            print(f"\n[STEP 2] Matching with {len(ht_results)} HT detections...")
+            
+            matched_ht_ids = set()
+            matched_dam_ids = set()
+            new_objects_to_add = []
+            
             for ht_obj in ht_results:
                 bbox = ht_obj['bbox']
                 ht_obj_id = ht_obj['object_id']
-
-                # 해당 위치에 이미 mask가 있는지 확인
-                exists, matched_internal_id = self.check_if_mask_exists_at_bbox(
-                    bbox)
-
+                
+                # 현재 프레임 masks와 비교!
+                exists, matched_internal_id, overlap = self._match_with_current_masks(
+                    bbox, 
+                    outputs['masks']  # ← Frame N masks!
+                )
+                
                 if exists:
-                    # 이미 추적 중! HT의 초기화 요청 무시
-                    overlap_ratio = self._calculate_overlap_ratio(
-                        bbox, matched_internal_id)
-
-                    print(f"[FILTER] Frame {frame_idx}, HT obj_id {ht_obj_id}: "
-                          f"Already tracking (internal_id={matched_internal_id}), ignoring init request")
-
+                    # 매칭 성공
+                    print(f"  ✓ HT-{ht_obj_id} ← matched → DAM-{matched_internal_id} (overlap={overlap:.3f})")
+                    
+                    matched_ht_ids.add(ht_obj_id)
+                    matched_dam_ids.add(matched_internal_id)
+                    
                     actions.append({
                         'ht_obj_id': ht_obj_id,
                         'internal_id': matched_internal_id,
-                        'action': 'FILTER',
-                        'overlap_ratio': round(overlap_ratio, 3)
+                        'action': 'MATCH',
+                        'overlap_ratio': round(overlap, 3)
                     })
-
                 else:
-                    # 새 객체! 초기화
-                    print(f"[NEW] Frame {frame_idx}, HT obj_id {ht_obj_id}: "
-                          f"No mask found, initializing new object")
-
-                    region = {
-                        'bbox': [bbox['x'], bbox['y'], bbox['w'], bbox['h']]}
-                    internal_id, mask = self.add_object(image, region)
-                    print(f"      → Assigned internal_id={internal_id}")
-
-                    actions.append({
+                    # 매칭 실패 → 새 객체
+                    print(f"  ✗ HT-{ht_obj_id}: No match found (will add as new object)")
+                    
+                    new_objects_to_add.append({
                         'ht_obj_id': ht_obj_id,
+                        'bbox': bbox
+                    })
+            
+            # ✅ STEP 3: 새 객체 추가
+            if new_objects_to_add:
+                print(f"\n[STEP 3] Adding {len(new_objects_to_add)} new objects...")
+                
+                for new_obj in new_objects_to_add:
+                    region = {
+                        'bbox': [new_obj['bbox']['x'], new_obj['bbox']['y'],
+                                new_obj['bbox']['w'], new_obj['bbox']['h']]
+                    }
+                    internal_id, new_mask = self.add_object(image, region)
+                    
+                    print(f"  → HT-{new_obj['ht_obj_id']} assigned DAM-{internal_id}")
+                    
+                    matched_ht_ids.add(new_obj['ht_obj_id'])
+                    matched_dam_ids.add(internal_id)
+                    
+                    actions.append({
+                        'ht_obj_id': new_obj['ht_obj_id'],
                         'internal_id': internal_id,
                         'action': 'NEW',
                         'overlap_ratio': 0.0
                     })
+                    
+                    # outputs에 새 mask 추가
+                    outputs['masks'].append(new_mask)
+            
+            # ✅ STEP 4: 매칭 안 된 DAM 객체 확인 (디버깅용)
+            unmatched_dam = set(self.all_obj_ids) - matched_dam_ids
+            if unmatched_dam:
+                print(f"\n[WARNING] {len(unmatched_dam)} DAM objects not matched with HT:")
+                for dam_id in unmatched_dam:
+                    idx = self.all_obj_ids.index(dam_id)
+                    if idx < len(outputs['masks']):
+                        pixels = np.sum(outputs['masks'][idx] > 0)
+                        print(f"  ⚠️  internal_id={dam_id} ({pixels} pixels) - possibly lost or occluded")
 
-            # 추적 수행
-            outputs = self.track(image)
-
-        # 결과를 JSON에 저장
+        # 결과 저장
         self.save_results_to_json(frame_idx, json_path, outputs, actions)
-
         return outputs
 
-    def _calculate_overlap_ratio(self, bbox, internal_id):
-        """bbox와 내부 ID의 mask 간 overlap ratio 계산"""
+    def _match_with_current_masks(self, bbox, current_masks, threshold=0.3):
+        """
+        현재 프레임의 masks와 HT bbox 매칭
+        
+        Args:
+            bbox: HT bbox {'x', 'y', 'w', 'h'}
+            current_masks: track()이 방금 생성한 masks (Frame N)
+            threshold: overlap threshold
+        
+        Returns:
+            (matched, obj_id, overlap_ratio)
+        """
         x, y, w, h = bbox['x'], bbox['y'], bbox['w'], bbox['h']
-
-        if internal_id not in self.all_obj_ids:
-            return 0.0
-
-        obj_mem = self.per_object_outputs_all[internal_id]
-        if not obj_mem:
-            return 0.0
-
-        latest_mem = obj_mem[-1]
-        pred_mask = latest_mem['pred_masks']
-
-        if isinstance(pred_mask, np.ndarray):
-            mask = pred_mask[0, 0]
-        else:
-            mask = pred_mask[0, 0].cpu().numpy()
-
-        # mask를 원본 크기로 리사이즈
-        if mask.shape[0] != self.img_height or mask.shape[1] != self.img_width:
-            import cv2
-            mask = cv2.resize(mask, (self.img_width, self.img_height),
-                              interpolation=cv2.INTER_LINEAR)
-
-        # bbox 영역 추출
-        y_start = max(0, y)
-        y_end = min(self.img_height, y + h)
-        x_start = max(0, x)
-        x_end = min(self.img_width, x + w)
-
-        if y_end <= y_start or x_end <= x_start:
-            return 0.0
-
-        mask_crop = mask[y_start:y_end, x_start:x_end]
-        bbox_area = w * h
-
-        if bbox_area == 0:
-            return 0.0
-
-        overlap_area = np.sum(mask_crop > 0)
-        return overlap_area / bbox_area
+        
+        best_overlap = 0
+        best_obj_id = None
+        
+        for obj_idx, mask in enumerate(current_masks):
+            if obj_idx >= len(self.all_obj_ids):
+                continue
+            
+            obj_id = self.all_obj_ids[obj_idx]
+            
+            # mask 리사이즈
+            if mask.shape != (self.img_height, self.img_width):
+                import cv2
+                mask = cv2.resize(mask, (self.img_width, self.img_height),
+                                interpolation=cv2.INTER_LINEAR)
+            
+            # bbox 영역 추출
+            y_start = max(0, y)
+            y_end = min(self.img_height, y + h)
+            x_start = max(0, x)
+            x_end = min(self.img_width, x + w)
+            
+            if y_end <= y_start or x_end <= x_start:
+                continue
+            
+            mask_crop = mask[y_start:y_end, x_start:x_end]
+            
+            # 양방향 overlap 계산
+            bbox_area = w * h
+            mask_area = np.sum(mask > 0)
+            overlap_area = np.sum(mask_crop > 0)
+            
+            if bbox_area == 0 or mask_area == 0:
+                continue
+            
+            # bbox 기준 & mask 기준 모두 계산
+            overlap_ratio_bbox = overlap_area / bbox_area
+            overlap_ratio_mask = overlap_area / mask_area
+            
+            # 둘 중 큰 값 사용 (양방향 IoU)
+            max_overlap = max(overlap_ratio_bbox, overlap_ratio_mask)
+            
+            if max_overlap > best_overlap:
+                best_overlap = max_overlap
+                best_obj_id = obj_id
+        
+        if best_overlap >= threshold:
+            return True, best_obj_id, best_overlap
+        
+        return False, None, 0.0
 
     def save_results_to_json(self, frame_idx, json_path, outputs, actions=None):
         """
