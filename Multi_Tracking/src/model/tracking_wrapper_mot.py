@@ -1183,7 +1183,8 @@ class DAM4SAMMOT():
         # ==========================================
         # 결과 포맷 변환
         # ==========================================
-        result = {"masks": []}
+        result = {"masks": [],
+                  "mask_arrays": []}
         
         for obj_idx, obj_id in enumerate(self.all_obj_ids):
             if obj_idx >= len(outputs['masks']):
@@ -1207,5 +1208,7 @@ class DAM4SAMMOT():
                 "bbox": [bbox_dict['x'], bbox_dict['y'], bbox_dict['w'], bbox_dict['h']],
                 "mask_pixels": int(np.sum(mask > 0))
             })
+
+            result["mask_arrays"].append(mask)
         
         return result

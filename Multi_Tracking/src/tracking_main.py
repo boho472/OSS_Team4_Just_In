@@ -167,15 +167,28 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
         )
         print(f"✅ DAM4SAM processed frame {i}: {len(dam_outputs['masks'])} objects tracked")
         
+        # ✅ 여기에서 mask_arrays의 타입/shape을 확인
+        if dam_outputs.get('mask_arrays'):
+            print("type(mask_arrays[0]) =", type(dam_outputs['mask_arrays'][0]))
+            print("mask_arrays[0].shape =", dam_outputs['mask_arrays'][0].shape)
+
         # ===========================
         # Segmentation 시각화 이미지 생성 및 used_frame 폴더에 저장
         # ===========================
-        if dam_outputs['masks']:
+        if dam_outputs.get('mask_arrays'):
+            masks = dam_outputs['mask_arrays']
+
+            meta_list = dam_outputs.get('masks', [])
+            if meta_list and isinstance(meta_list[0], dict) and 'ht_object_id' in meta_list[0]:
+                obj_ids = [m['ht_object_id'] for m in meta_list]
+            else:
+                obj_ids = list(range(len(masks)))
+            
             vis_image = visualize_segmentation(
                 image=np.array(image),
-                masks=dam_outputs['masks'],
-                obj_ids=dam_outputs.get('obj_ids', list(range(len(dam_outputs['masks'])))),
-                scores=dam_outputs.get('scores', None)
+                masks=masks,
+                obj_ids=obj_ids,
+                scores=None
             )
             
             # used_frame 폴더에 시각화 이미지 저장
@@ -215,7 +228,7 @@ def visualize_segmentation(image, masks, obj_ids, scores=None, alpha=0.5):
     
     # 각 마스크를 오버레이
     for idx, (mask, obj_id) in enumerate(zip(masks, obj_ids)):
-        if mask.sum() == 0:  # 빈 마스크는 건너뜀
+        if mask.sum() == 0 or None:  # 빈 마스크는 건너뜀
             continue
             
         color = colors[idx % len(colors)]
