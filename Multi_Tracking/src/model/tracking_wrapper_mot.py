@@ -1087,19 +1087,6 @@ class DAM4SAMMOT():
                 ]
             }
         """
-        # ht_data를 기존 JSON 형식으로 변환
-        ht_results = []
-        for ht_obj in ht_data:
-            ht_results.append({
-                'object_id': ht_obj['object_id'],
-                'bbox': {
-                    'x': int(ht_obj['bbox'][0]),
-                    'y': int(ht_obj['bbox'][1]),
-                    'w': int(ht_obj['bbox'][2]),
-                    'h': int(ht_obj['bbox'][3])
-                }
-            })
-        
         actions = []
         
         # ==========================================
@@ -1107,10 +1094,12 @@ class DAM4SAMMOT():
         # ==========================================
         if frame_idx == 0:
             init_regions = []
-            for ht_obj in ht_results:
+
+            # ✅ Frame 0에서는 all_objects가 곧 new_objects
+            for ht_obj in ht_data["all_objects"]:
                 bbox = ht_obj['bbox']
                 init_regions.append({
-                    'bbox': [bbox['x'], bbox['y'], bbox['w'], bbox['h']]
+                    'bbox': bbox
                 })
                 actions.append({
                     'ht_obj_id': ht_obj['object_id'],
@@ -1131,16 +1120,15 @@ class DAM4SAMMOT():
             
             matched_ht_ids = set()
             matched_dam_ids = set()
-            new_objects_to_add = []
             
-            for ht_obj in ht_results:
+            for ht_obj in ht_data["all_objects"]:
                 bbox = ht_obj['bbox']
                 ht_obj_id = ht_obj['object_id']
                 
                 # 현재 프레임 masks와 매칭
                 exists, matched_internal_id, overlap = self._match_with_current_masks(
-                    bbox, 
-                    outputs['masks']
+                    {'x': bbox[0], 'y': bbox[1], 'w': bbox[2], 'h': bbox[3]},
+                outputs['masks']
                 )
                 
                 if exists:
@@ -1153,32 +1141,36 @@ class DAM4SAMMOT():
                         'action': 'MATCH',
                         'overlap_ratio': round(overlap, 3)
                     })
-                else:
-                    new_objects_to_add.append({
-                        'ht_obj_id': ht_obj_id,
-                        'bbox': bbox
-                    })
             
-            # 새 객체 추가
-            if new_objects_to_add:
-                for new_obj in new_objects_to_add:
-                    region = {
-                        'bbox': [new_obj['bbox']['x'], new_obj['bbox']['y'],
-                                new_obj['bbox']['w'], new_obj['bbox']['h']]
-                    }
-                    internal_id, new_mask = self.add_object(image, region)
-                    
-                    matched_ht_ids.add(new_obj['ht_obj_id'])
-                    matched_dam_ids.add(internal_id)
-                    
-                    actions.append({
-                        'ht_obj_id': new_obj['ht_obj_id'],
-                        'internal_id': internal_id,
-                        'action': 'NEW',
-                        'overlap_ratio': 0.0
-                    })
-                    
-                    outputs['masks'].append(new_mask)
+            # 새 객체 추가(created_frame == current_frame)
+            for new_obj in ht_data["new_objects"]:
+                ht_obj_id = new_obj['object_id']
+                bbox = new_obj['bbox']
+
+                # 이미 매칭된 객체는 스킵 (중복 방지)
+                if ht_obj_id in matched_ht_ids:
+                    print(f"⚠️ Object {ht_obj_id} is new but already matched (unexpected)")
+                    continue
+
+                # 새 객체 초기화
+                region = {
+                    'bbox': bbox  # [x, y, w, h]
+                }
+                internal_id, new_mask = self.add_object(image, region)
+                
+                matched_ht_ids.add(ht_obj_id)
+                matched_dam_ids.add(internal_id)
+                
+                actions.append({
+                    'ht_obj_id': ht_obj_id,
+                    'internal_id': internal_id,
+                    'action': 'NEW',
+                    'overlap_ratio': 0.0
+                })
+                
+                outputs['masks'].append(new_mask)
+
+                print(f"✅ Added NEW object: HT_ID={ht_obj_id}, Internal_ID={internal_id}")
         
         # ==========================================
         # 결과 포맷 변환

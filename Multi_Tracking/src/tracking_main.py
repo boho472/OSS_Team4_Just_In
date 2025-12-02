@@ -144,7 +144,13 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
         #===========================
         # HT 결과에서 필요한 정보만 추출
         #===========================
-        hybridtrack_data = extract_ht_for_dam4sam(result_dict[frame_num])
+        #기존 코드: hybridtrack_data = extract_ht_for_dam4sam(result_dict[frame_num])
+        # ✅ 수정: 현재 프레임 번호 전달
+        current_frame_idx = int(saved_frame[i][:-4])  # "000038" → 38
+        hybridtrack_data = extract_ht_for_dam4sam(
+            result_dict[frame_num], 
+            current_frame_idx
+        )
 
         #===========================
         # frame_db에 HT 데이터 업데이트(id, bbox)
@@ -165,7 +171,7 @@ def track_one_seq(seq_id,config,video_path,save_frame,save_txt,used_frame,result
             hybridtrack_data=hybridtrack_data,
             image=image
         )
-        print(f"✅ DAM4SAM processed frame {i}: {len(dam_outputs['masks'])} objects tracked")
+        print(f"✅ Frame {current_frame_idx}: {len(hybridtrack_data['new_objects'])} new, {len(hybridtrack_data['all_objects'])} total")
         
         # ✅ 여기에서 mask_arrays의 타입/shape을 확인
         if dam_outputs.get('mask_arrays'):
@@ -316,7 +322,7 @@ def tracking_val_seq(arg):
         frame_to_video(used_frame, result_file_name)
 
 
-def extract_ht_for_dam4sam(frame_tracks):
+def extract_ht_for_dam4sam(frame_tracks, current_frame_idx):
     """
     HybridTrack 결과에서 DAM4SAM에 필요한 정보만 추출
     
@@ -327,15 +333,24 @@ def extract_ht_for_dam4sam(frame_tracks):
                 "tracks_2": {...},
                 "dead": []
             }
+        current_frame_idx: 현재 프레임 번호 (int, 예: 38)
     
     Returns:
         [
-            {"object_id": 1, "bbox": [x, y, w, h]},
-            {"object_id": 2, "bbox": [x, y, w, h]},
-            ...
+            "new_objects": [
+                {"object_id": 3, "bbox": [x, y, w, h]},  # 이번 프레임에 새로 생성
+                ...
+            ],
+            "all_objects": [
+                {"object_id": 1, "bbox": [x, y, w, h]},  # 모든 추적 중인 객체
+                {"object_id": 2, "bbox": [x, y, w, h]},
+                {"object_id": 3, "bbox": [x, y, w, h]},
+                ...
+            ]
         ]
     """
-    ht_results = []
+    new_objects = []
+    all_objects = []
     
     for track_key, track_info in frame_tracks.items():
         # "dead" 키는 스킵
@@ -354,7 +369,7 @@ def extract_ht_for_dam4sam(frame_tracks):
         if track_info.get("status") == "undetected":
             continue
         
-        ht_results.append({
+        bbox_data = {
             "object_id": track_id,
             "bbox": [
                 det_bbox["x"],
@@ -362,9 +377,20 @@ def extract_ht_for_dam4sam(frame_tracks):
                 det_bbox["w"],
                 det_bbox["h"]
             ]
-        })
+        }
+
+        # 모든 객체 리스트에 추가
+        all_objects.append(bbox_data)
+
+        # ✅ created_frame과 현재 프레임이 같으면 새 객체
+        created_frame = track_info.get("created_frame")
+        if created_frame == current_frame_idx:
+            new_objects.append(bbox_data)
     
-    return ht_results
+    return {
+        "new_objects": new_objects,
+        "all_objects": all_objects
+    }
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='arg parser')
