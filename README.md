@@ -32,35 +32,8 @@ DAM4SAM (세그멘테이션 기반 추적 및 이중 검증)
 
 4. 디렉토리 구조
 
-Multi_Tracking_Person/
-├── assets/
-├── configs/
-├── docs/
-├── results/
-│
-├── src/
-│ ├── data/
-│ ├── dataset/
-│ ├── evaluator/
-│ ├── json_system/
-│ ├── model/
-│ ├── sam2/
-│ ├── tools/
-│ ├── tracker/
-│ │
-│ ├── run_tracking.py
-│ ├── tracking_main.py
-│ ├── realtime.py
-│ ├── evaluate.py
-│ ├── training_script.py
-│ └── try_whole_model.ipynb # 전체 파이프라인 실행 노트북
-│
-├── ZoeDepth/
-├── yolo11n.pt
-├── yolo11n-seg.pt
-├── requirements.txt
-├── setup.py
-└── README.md
+<img width="607" height="978" alt="image" src="https://github.com/user-attachments/assets/a212f96e-4abe-423f-b39c-09af7272b9a0" />
+
 
 5. 실행 환경 설정
 
