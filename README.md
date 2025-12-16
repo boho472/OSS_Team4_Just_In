@@ -20,23 +20,11 @@ DAST(Depth-Aware Segmentation Tracker)는
 3. 전체 파이프라인 구조
 ![아키텍처1](https://github.com/user-attachments/assets/cb3967dc-4ed9-4bfc-95c8-e399a4179655)
 
-입력 영상 (RGB)
-↓
-YOLO11n / YOLO11n-seg (객체 탐지 및 초기화)
-↓
-ZoeDepth (단안 깊이 추정)
-↓
-3D 정규화 (Pseudo-3D 생성)
-↓
-HybridTrack (3D 다중 객체 추적 및 ID 관리)
-↔
-DAM4SAM (세그멘테이션 기반 추적 및 이중 검증)
+<img width="455" height="357" alt="image" src="https://github.com/user-attachments/assets/659da370-4f49-43ab-adbb-58504c5a00b7" />
 
 
 4. 디렉토리 구조
-
-<img width="607" height="978" alt="image" src="https://github.com/user-attachments/assets/a212f96e-4abe-423f-b39c-09af7272b9a0" />
-
+<img width="569" height="869" alt="image" src="https://github.com/user-attachments/assets/209851a5-95f1-4596-8289-0121092365cf" />
 
 5. 실행 환경 설정
 
