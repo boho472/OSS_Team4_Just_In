@@ -1,0 +1,120 @@
+Metadata-Version: 2.1
+Name: SAM-2
+Version: 1.0
+Summary: SAM 2: Segment Anything in Images and Videos
+Home-page: https://github.com/facebookresearch/sam2
+Author: Meta AI
+Author-email: segment-anything@meta.com
+License: Apache 2.0
+Requires-Python: >=3.10.0
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.5.1
+Requires-Dist: torchvision>=0.20.1
+Requires-Dist: numpy>=1.24.4
+Requires-Dist: tqdm>=4.66.1
+Requires-Dist: hydra-core>=1.3.2
+Requires-Dist: iopath>=0.1.10
+Requires-Dist: pillow>=9.4.0
+Provides-Extra: notebooks
+Requires-Dist: matplotlib>=3.9.1; extra == "notebooks"
+Requires-Dist: jupyter>=1.0.0; extra == "notebooks"
+Requires-Dist: opencv-python>=4.7.0; extra == "notebooks"
+Requires-Dist: eva-decord>=0.6.1; extra == "notebooks"
+Provides-Extra: interactive-demo
+Requires-Dist: Flask>=3.0.3; extra == "interactive-demo"
+Requires-Dist: Flask-Cors>=5.0.0; extra == "interactive-demo"
+Requires-Dist: av>=13.0.0; extra == "interactive-demo"
+Requires-Dist: dataclasses-json>=0.6.7; extra == "interactive-demo"
+Requires-Dist: eva-decord>=0.6.1; extra == "interactive-demo"
+Requires-Dist: gunicorn>=23.0.0; extra == "interactive-demo"
+Requires-Dist: imagesize>=1.4.1; extra == "interactive-demo"
+Requires-Dist: pycocotools>=2.0.8; extra == "interactive-demo"
+Requires-Dist: strawberry-graphql>=0.243.0; extra == "interactive-demo"
+Provides-Extra: dev
+Requires-Dist: black==24.2.0; extra == "dev"
+Requires-Dist: usort==1.0.2; extra == "dev"
+Requires-Dist: ufmt==2.0.0b2; extra == "dev"
+Requires-Dist: fvcore>=0.1.5.post20221221; extra == "dev"
+Requires-Dist: pandas>=2.2.2; extra == "dev"
+Requires-Dist: scikit-image>=0.24.0; extra == "dev"
+Requires-Dist: tensorboard>=2.17.0; extra == "dev"
+Requires-Dist: pycocotools>=2.0.8; extra == "dev"
+Requires-Dist: tensordict>=0.6.0; extra == "dev"
+Requires-Dist: opencv-python>=4.7.0; extra == "dev"
+Requires-Dist: submitit>=1.5.1; extra == "dev"
+
+# HybridTrack: A Hybrid Approach for Robust Multi-Object Tracking
+
+[📄 Read the paper on arXiv](https://www.arxiv.org/abs/2501.01275)
+
+
+---
+HybridTrack is a novel 3D multi-object tracking (MOT) framework that combines the strengths of traditional Kalman filtering with the adaptability of deep learning. Designed for traffic and autonomous driving scenarios, it delivers **state-of-the-art accuracy** and **real-time performance**—no manual tuning or scenario-specific designs required.
+
+---
+## 🏆 News
+
+- HybridTrack has been **accepted to RAL 2025**!
+---
+## 🏗️ Method Architecture
+
+> 📌 *A schematic of the HybridTrack architecture will be added here.*
+
+![Method Architecture](assets/model_architecture_11.jpg)
+
+<p align="center">
+  <img src="assets/hybridtrack_demo.gif" width="900" alt="HybridTrack Demo"/>
+</p>
+
+### 📦 Features
+- 3D Object Tracking using LiDAR
+- Learnable Kalman Filter (LKF)
+- Real-time performance (112 FPS)
+- High tracking accuracy without handcrafted noise or motion models
+- Generalizes across different driving scenarios
+
+### 📊 Benchmark Performance
+| Method               | HOTA     | FPS   | Modality   | Model Weights                                                                 |
+|----------------------|----------|-------|------------|-------------------------------------------------------------------------------|
+| HybridTrack (Ours)   | **82.08%** | **112** | 3D (LiDAR) | [Download (.pth)](https://drive.google.com/file/d/1beFjycNjTtb2nDDf0vteHp1NNbR4lrvR/view?usp=sharing) |
+
+See the paper for detailed comparison across metrics like MOTA, IDF1, and association accuracy.
+
+### 📁 Dataset
+HybridTrack is evaluated on the [KITTI Tracking Benchmark](https://www.cvlibs.net/datasets/kitti/eval_tracking.php).
+
+---
+
+## ⚡ Quickstart
+
+1. **Prepare your data:** Follow the [Data Preparation Guide](docs/create_data.md) for step-by-step instructions on downloading, organizing, and linking the KITTI dataset, detections, and annotations.
+2. **Install requirements:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **Configure and run:**
+   - For training, see [Training Guide](docs/training.md)
+   - For tracking, see [Tracking Guide](docs/tracking.md)
+
+---
+
+## 🧩 Acknowledgements
+
+This repository builds upon the following open-source projects:
+- [KalmanNet_TSP](https://github.com/KalmanNet/KalmanNet_TSP)
+- [3D-Multi-Object-Tracker](https://github.com/hailanyi/3D-Multi-Object-Tracker)
+
+We thank the authors for their valuable contributions to the community.
+
+## 📜 Citation
+If you use HybridTrack in your research, please consider citing:
+
+```bibtex
+@article{di2025hybridtrack,
+  title={HybridTrack: A Hybrid Approach for Robust Multi-Object Tracking},
+  author={Di Bella, Leandro and Lyu, Yangxintong and Cornelis, Bruno and Munteanu, Adrian},
+  journal={arXiv preprint arXiv:2501.01275},
+  year={2025}
+}
+
+```

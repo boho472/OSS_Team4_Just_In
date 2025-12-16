@@ -1,0 +1,15 @@
+gitignore# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SAM2 checkpoint
+src/checkpoints/sam2.1_hiera_large.pt
+src/checkpoints/sam2.1_hiera_large.pt.1
+
+# Data directories
+src/data/json_file/*
+src/data/input_video/*
+src/data/point_cloud_video/*
+src/data/save_frames/*
+src/data/used_frames/*
